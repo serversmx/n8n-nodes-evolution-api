@@ -16,7 +16,8 @@ const properties: INodeProperties[] = [
     required: true,
     default: '',
     placeholder: '5215512345678, 5511999999999',
-    description: 'Phone numbers with country code (or JIDs), separated by commas or new lines',
+    description:
+      'Phone numbers with country code (or JIDs), separated by commas or new lines. Outputs one item per number with "exists" and "jid" (the WhatsApp ID to use in other operations).',
   },
 ];
 
