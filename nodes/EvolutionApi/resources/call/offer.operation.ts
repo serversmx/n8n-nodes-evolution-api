@@ -5,6 +5,13 @@ import { evolutionApiRequest, normalizeNumber, resolveInstanceName } from '../..
 
 const properties: INodeProperties[] = [
   {
+    displayName:
+      'Evolution API does not implement calls yet: this operation returns a placeholder ID ("123") and places NO call. Do not rely on it to reach a contact.',
+    name: 'callOfferNotice',
+    type: 'notice',
+    default: '',
+  },
+  {
     displayName: 'Number',
     name: 'number',
     type: 'string',
@@ -26,7 +33,7 @@ const properties: INodeProperties[] = [
     type: 'number',
     typeOptions: { minValue: 1, maxValue: 15 },
     default: 5,
-    description: 'How long the call rings, between 1 and 15 seconds',
+    description: 'How long the call would ring, between 1 and 15 seconds',
   },
 ];
 
@@ -47,10 +54,12 @@ export async function execute(this: IExecuteFunctions, itemIndex: number): Promi
   if (!number) {
     throw new NodeOperationError(this.getNode(), 'Number is required', { itemIndex });
   }
+  // callDuration is an integer between 1 and 15 in offerCallSchema.
+  const duration = Math.round(Number(this.getNodeParameter('callDuration', itemIndex, 5)));
   const body: IDataObject = {
     number,
     isVideo: this.getNodeParameter('isVideo', itemIndex, false) as boolean,
-    callDuration: Math.round(this.getNodeParameter('callDuration', itemIndex, 5) as number),
+    callDuration: Number.isFinite(duration) ? Math.min(15, Math.max(1, duration)) : 5,
   };
   return (await evolutionApiRequest.call(
     this,

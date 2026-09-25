@@ -11,20 +11,19 @@ const properties: INodeProperties[] = [
     default: '',
     placeholder: '5215512345678',
     description:
-      'Phone number with country code (or JID) of the profile to fetch. Leave empty for the profile of the instance itself (its "status" is then the connection state, not the about text).',
+      'Phone number with country code (or JID) of the business. Leave empty for the business profile of the instance itself.',
   },
 ];
 
 export const description = updateDisplayOptions(
-  { show: { resource: ['profile'], operation: ['get'] } },
+  { show: { resource: ['profile'], operation: ['getBusinessProfile'] } },
   properties,
 );
 
 /**
- * POST /chat/fetchProfile/:instanceName { number? } (200) →
- * { wuid, name, numberExists, picture, status, isBusiness, email, description, website }.
- * For the instance itself (no number) "status" is the connection status, not the about text.
- * A number that is not on WhatsApp is answered 400 with the whatsappNumbers entry.
+ * POST /chat/fetchBusinessProfile/:instanceName { number? } (profilePictureSchema, 200) →
+ * { isBusiness: true, wid, description, email, website[], category, address, business_hours… }
+ * or { isBusiness: false, message: 'Not is business profile', jid, exists, number, name }.
  */
 export async function execute(this: IExecuteFunctions, itemIndex: number): Promise<IDataObject> {
   const instance = await resolveInstanceName.call(this, itemIndex);
@@ -33,12 +32,9 @@ export async function execute(this: IExecuteFunctions, itemIndex: number): Promi
   return (await evolutionApiRequest.call(
     this,
     'POST',
-    `/chat/fetchProfile/${instance}`,
+    `/chat/fetchBusinessProfile/${instance}`,
     body,
     {},
-    {
-      itemIndex,
-      idempotent: true,
-    },
+    { itemIndex, idempotent: true },
   )) as IDataObject;
 }

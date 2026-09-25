@@ -22,8 +22,8 @@ export const operations: INodeProperties = {
       name: 'Offer',
       value: 'offer',
       description:
-        'Offer a voice or video call. Evolution API 2.3/2.4 answer a placeholder and place no call.',
-      action: 'Offer a call',
+        'Experimental no-op: Evolution API 2.3.x and 2.4.x answer a placeholder ID ("123") and place NO call',
+      action: 'Offer a call (no-op stub)',
     },
   ],
   default: 'offer',
