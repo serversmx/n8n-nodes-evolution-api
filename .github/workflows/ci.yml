@@ -1,0 +1,45 @@
+name: CI
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+
+permissions:
+  contents: read
+
+jobs:
+  test:
+    name: Node ${{ matrix.node-version }}
+    runs-on: ubuntu-latest
+    strategy:
+      fail-fast: false
+      matrix:
+        node-version: ['18.x', '20.x', '22.x']
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: ${{ matrix.node-version }}
+          cache: npm
+
+      # --ignore-scripts: this package has no runtime dependencies and needs no native addon
+      # builds; skipping install scripts avoids depending on a native toolchain (e.g. for
+      # transitive devDependencies such as isolated-vm) being available/successful on the runner.
+      - run: npm ci --ignore-scripts
+
+      - name: Lint (project rules)
+        run: npm run lint
+
+      - name: Lint (n8n community-node verification rules)
+        run: npm run lint:n8n
+
+      - name: Test
+        run: npm test
+
+      - name: Build
+        run: npm run build
+
+      - name: Verify package contents
+        run: npm pack --dry-run

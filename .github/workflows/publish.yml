@@ -1,0 +1,61 @@
+name: Publish
+
+# Publishes to npm on every `vX.Y.Z` tag, as n8n's community-node verification
+# requirements (in effect since May 2026) require: a GitHub Actions release with an
+# npm provenance statement (`npm publish --provenance`).
+#
+# Auth: this workflow authenticates to npm with a classic automation token stored as
+# the `NPM_TOKEN` repository secret (Settings -> Secrets and variables -> Actions),
+# NOT npm Trusted Publishing (OIDC). Trusted Publishing can only be turned on for a
+# package that already exists on the registry (it's configured from that package's
+# npm settings page), and this package has not been published yet. `permissions:
+# id-token: write` is still required and used here: it's what lets
+# `npm publish --provenance` mint the Sigstore-signed provenance attestation via
+# GitHub's OIDC token, independently of which auth method is used against the
+# registry itself.
+#
+# Once the first version is on npm, a maintainer can switch this package to Trusted
+# Publishing from https://www.npmjs.com/package/@renatoascencio/n8n-nodes-evolution-api
+# (Settings -> Publishing access -> add this repo + this workflow file as a trusted
+# publisher), remove the `NODE_AUTH_TOKEN` env line below, and delete the `NPM_TOKEN`
+# secret.
+on:
+  push:
+    tags:
+      - 'v*'
+
+permissions:
+  contents: read
+
+jobs:
+  publish:
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+      id-token: write
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '20.x'
+          registry-url: 'https://registry.npmjs.org'
+          cache: npm
+
+      # See ci.yml: --ignore-scripts avoids depending on a native toolchain for transitive
+      # devDependencies this package's own code never uses.
+      - run: npm ci --ignore-scripts
+
+      - name: Test
+        run: npm test
+
+      - name: Build
+        run: npm run build
+
+      - name: Verify package contents
+        run: npm pack --dry-run
+
+      - name: Publish to npm
+        run: npm publish --provenance --access public
+        env:
+          NODE_AUTH_TOKEN: ${{ secrets.NPM_TOKEN }}

@@ -155,12 +155,16 @@ export async function execute(this: IExecuteFunctions, itemIndex: number): Promi
       {},
       { itemIndex },
     )) as IDataObject;
-  } catch (error) {
-    if (error instanceof NodeApiError && error.httpCode === '500' && body.wavoipToken) {
-      error.description =
-        `Wavoip requires a connected WhatsApp Baileys socket. Evolution may already have saved these settings before failing. Add Wavoip Token with an empty value to clear it, or connect the Baileys instance before retrying. ${error.description ?? ''}`.trim();
+  } catch (caughtError) {
+    // evolutionApiRequest only ever throws NodeApiError or NodeOperationError (never a
+    // raw error), so this augments and re-throws the same error object; `apiError` is a
+    // local binding (not the catch parameter itself) so this isn't a raw-error rethrow.
+    const apiError = caughtError;
+    if (apiError instanceof NodeApiError && apiError.httpCode === '500' && body.wavoipToken) {
+      apiError.description =
+        `Wavoip requires a connected WhatsApp Baileys socket. Evolution may already have saved these settings before failing. Add Wavoip Token with an empty value to clear it, or connect the Baileys instance before retrying. ${apiError.description ?? ''}`.trim();
     }
-    throw error;
+    throw apiError;
   }
 
   return options.includeSecrets === true ? response : redactSettingsSecrets(response);

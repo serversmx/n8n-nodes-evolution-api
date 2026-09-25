@@ -179,7 +179,8 @@ export class EvolutionApiTrigger implements INodeType {
   description: INodeTypeDescription = {
     displayName: 'Evolution API Trigger',
     name: 'evolutionApiTrigger',
-    icon: 'file:evolution.svg',
+    // See EvolutionApi.node.ts: same theme-agnostic glyph for both variants.
+    icon: { light: 'file:evolution.svg', dark: 'file:evolution.svg' },
     group: ['trigger'],
     version: 1,
     subtitle:

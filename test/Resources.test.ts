@@ -252,7 +252,7 @@ describe('EvolutionApi node description', () => {
     expect(description.usableAsTool).toBe(true);
     expect(description.inputs).toEqual(['main']);
     expect(description.outputs).toEqual(['main']);
-    expect(description.icon).toBe('file:evolution.svg');
+    expect(description.icon).toEqual({ light: 'file:evolution.svg', dark: 'file:evolution.svg' });
     expect(description.subtitle).toBeTruthy();
   });
 

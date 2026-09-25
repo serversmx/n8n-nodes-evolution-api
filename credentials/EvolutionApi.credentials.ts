@@ -18,7 +18,11 @@ export class EvolutionApi implements ICredentialType {
 
   displayName = 'Evolution API v2';
 
-  icon: Icon = 'file:../nodes/EvolutionApi/evolution.svg';
+  // Same theme-agnostic glyph as the node (see EvolutionApi.node.ts) for both variants.
+  icon: Icon = {
+    light: 'file:../nodes/EvolutionApi/evolution.svg',
+    dark: 'file:../nodes/EvolutionApi/evolution.svg',
+  };
 
   documentationUrl = 'https://doc.evolution-api.com/v2/en/get-started/introduction';
 

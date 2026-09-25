@@ -158,7 +158,9 @@ export class EvolutionApi implements INodeType {
   description: INodeTypeDescription = {
     displayName: 'Evolution API',
     name: 'evolutionApi',
-    icon: 'file:evolution.svg',
+    // Single gradient-filled glyph: it already reads the same way on both themes, so
+    // the light/dark variants intentionally point at the same file.
+    icon: { light: 'file:evolution.svg', dark: 'file:evolution.svg' },
     group: ['transform'],
     version: 1,
     subtitle: '={{$parameter["operation"] + ": " + $parameter["resource"]}}',
