@@ -2,37 +2,31 @@ import type { IDataObject, IExecuteFunctions, INodeProperties } from 'n8n-workfl
 import { updateDisplayOptions } from 'n8n-workflow';
 
 import { evolutionApiRequest, resolveInstanceName, toArray } from '../../GenericFunctions';
-import { parseBotType, redactBotSecrets, secretsOptionsProperty } from './helpers';
+import { redactBotSecrets, secretsOptionsProperty } from './helpers';
 
-/** "Bot Type" is shared by most chatbot operations and lives in index.ts. */
 const properties: INodeProperties[] = [secretsOptionsProperty];
 
 export const description = updateDisplayOptions(
-  { show: { resource: ['chatbot'], operation: ['getMany'] } },
+  { show: { resource: ['chatbot'], operation: ['getCredentials'] } },
   properties,
 );
 
 /**
- * GET /:botType/find/:instanceName → array of bots of that integration for the instance, one
- * item each. Answers 400 "<Integration> is disabled" when the integration is off on the server
- * (e.g. N8N_ENABLED=false).
+ * GET /openai/creds/:instanceName → array of OpenaiCreds { id, name, apiKey, createdAt,
+ * updatedAt, instanceId, OpenaiAssistant: [bots using it] }, one item each. The API keys come
+ * back in clear text and are removed unless "Include Secrets" is on.
  */
 export async function execute(this: IExecuteFunctions, itemIndex: number): Promise<IDataObject[]> {
   const instance = await resolveInstanceName.call(this, itemIndex);
-  const botType = parseBotType(
-    this.getNode(),
-    this.getNodeParameter('botType', itemIndex),
-    itemIndex,
-  );
   const options = this.getNodeParameter('options', itemIndex, {}) as IDataObject;
   const response = await evolutionApiRequest.call(
     this,
     'GET',
-    `/${botType.value}/find/${instance}`,
+    `/openai/creds/${instance}`,
     {},
     {},
     { itemIndex },
   );
-  const bots = toArray(response);
-  return options.includeSecrets === true ? bots : redactBotSecrets(bots);
+  const credentials = toArray(response);
+  return options.includeSecrets === true ? credentials : redactBotSecrets(credentials);
 }
