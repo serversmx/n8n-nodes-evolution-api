@@ -107,13 +107,14 @@ describe('webhook > set', () => {
     expect(output[0].json.headers).toEqual({ 'x-tenant': 'acme' });
   });
 
-  it('always sends events: [] means every event, and untouched options are not sent', async () => {
+  it('explicitly replaces a stored event selection with every event', async () => {
     const ctx = createMockExecuteFunctions({
       params: {
         resource: 'webhook',
         operation: 'set',
         instanceName: 'main',
         webhookUrl: 'https://n8n.test/w',
+        options: { allEvents: true },
       },
     });
     ctx.http.reply('POST', '/webhook/set/main', STORED_WEBHOOK, 201);
@@ -123,6 +124,33 @@ describe('webhook > set', () => {
     expect(ctx.http.calls[0].body).toEqual({
       webhook: { enabled: true, url: 'https://n8n.test/w', events: [] },
     });
+  });
+
+  it.each([{ jwtKey: 'rotated' }, {}])('preserves stored events on a partial update (%#)', async (additionalFields) => {
+    const ctx = createMockExecuteFunctions({
+      params: {
+        resource: 'webhook', operation: 'set', instanceName: 'main',
+        webhookUrl: 'https://n8n.test/new', additionalFields,
+      },
+    });
+    ctx.http.reply('GET', '/webhook/find/main', STORED_WEBHOOK);
+    ctx.http.reply('POST', '/webhook/set/main', STORED_WEBHOOK, 201);
+    await new EvolutionApi().execute.call(ctx);
+    expect(ctx.http.calls.map((call) => call.method)).toEqual(['GET', 'POST']);
+    expect(bodyOf(ctx.http.calls[1]).events).toEqual(['MESSAGES_UPSERT']);
+  });
+
+  it('uses all events for a first setup with no stored subscription', async () => {
+    const ctx = createMockExecuteFunctions({
+      params: {
+        resource: 'webhook', operation: 'set', instanceName: 'main',
+        webhookUrl: 'https://n8n.test/new',
+      },
+    });
+    ctx.http.reply('GET', '/webhook/find/main', null);
+    ctx.http.reply('POST', '/webhook/set/main', STORED_WEBHOOK, 201);
+    await new EvolutionApi().execute.call(ctx);
+    expect(bodyOf(ctx.http.calls[1]).events).toEqual([]);
   });
 
   it('keeps the stored URL and headers when only the JWT key changes', async () => {
@@ -237,7 +265,7 @@ describe('webhook > set', () => {
 
   it('sets one webhook per item', async () => {
     const ctx = createMockExecuteFunctions({
-      params: { resource: 'webhook', operation: 'set' },
+      params: { resource: 'webhook', operation: 'set', options: { allEvents: true } },
       items: [{ json: {} }, { json: {} }],
       itemParams: [
         { instanceName: 'a', webhookUrl: 'https://n8n.test/a' },
@@ -354,6 +382,7 @@ describe('webhook > setTransport', () => {
         operation: 'setTransport',
         instanceName: 'main',
         eventTransport: 'sqs',
+        transportEvents: ['CALL'],
       },
     });
     ctx.http.reply('POST', '/sqs/set/main', '', 201);
@@ -375,6 +404,7 @@ describe('webhook > setTransport', () => {
     });
     ctx.http.reply('GET', '/pusher/find/main', {
       enabled: true,
+      events: ['MESSAGES_UPSERT'],
       appId: '123',
       key: 'key',
       secret: 'secret',
@@ -397,7 +427,7 @@ describe('webhook > setTransport', () => {
     expect(ctx.http.calls[1].body).toEqual({
       pusher: {
         enabled: true,
-        events: [],
+        events: ['MESSAGES_UPSERT'],
         appId: '123',
         key: 'key',
         secret: 'secret',
@@ -423,6 +453,45 @@ describe('webhook > setTransport', () => {
       'Missing Pusher settings: key, secret, cluster',
     );
     expect(ctx.http.calls).toHaveLength(1);
+  });
+
+  it.each(['websocket', 'rabbitmq', 'sqs', 'nats', 'kafka'])(
+    'preserves stored %s events when Events is left empty',
+    async (eventTransport) => {
+      const ctx = createMockExecuteFunctions({
+        params: { resource: 'webhook', operation: 'setTransport', instanceName: 'main', eventTransport },
+      });
+      ctx.http.reply('GET', `/${eventTransport}/find/main`, { enabled: true, events: ['CALL'] });
+      ctx.http.reply('POST', `/${eventTransport}/set/main`, { enabled: true, events: ['CALL'] }, 201);
+      await new EvolutionApi().execute.call(ctx);
+      expect(ctx.http.calls[1].body).toEqual({ [eventTransport]: { enabled: true, events: ['CALL'] } });
+    },
+  );
+
+  it('explicitly subscribes a transport to all events', async () => {
+    const ctx = createMockExecuteFunctions({
+      params: {
+        resource: 'webhook', operation: 'setTransport', instanceName: 'main',
+        eventTransport: 'rabbitmq', transportEvents: ['CALL'], options: { allEvents: true },
+      },
+    });
+    ctx.http.reply('POST', '/rabbitmq/set/main', { enabled: true }, 201);
+    await new EvolutionApi().execute.call(ctx);
+    expect(ctx.http.calls[0].body).toEqual({ rabbitmq: { enabled: true, events: [] } });
+  });
+
+  it('warns when Pusher saves a row after an empty read because delivery may be disabled', async () => {
+    const ctx = createMockExecuteFunctions({
+      params: {
+        resource: 'webhook', operation: 'setTransport', instanceName: 'main', eventTransport: 'pusher',
+        pusherConfig: { appId: '1', key: 'public', secret: 'private', cluster: 'us2' },
+      },
+    });
+    ctx.http.reply('GET', '/pusher/find/main', '');
+    ctx.http.reply('POST', '/pusher/set/main', { enabled: true, secret: 'private' }, 201);
+    const [output] = await new EvolutionApi().execute.call(ctx);
+    expect(output[0].json).toEqual({ enabled: true, notice: expect.stringContaining('PUSHER_ENABLED=false') });
+    expect(output[0].json.notice).toContain('first setup');
   });
 });
 

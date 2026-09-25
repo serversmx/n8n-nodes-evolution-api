@@ -1,7 +1,7 @@
 import type { IDataObject, IExecuteFunctions, INodeProperties } from 'n8n-workflow';
 import { updateDisplayOptions } from 'n8n-workflow';
 
-import { toJid } from '../../GenericFunctions';
+import { evolutionJid } from '../chat/helpers';
 import { getString, operationError, postMessage } from './helpers';
 
 const properties: INodeProperties[] = [
@@ -13,7 +13,7 @@ const properties: INodeProperties[] = [
     default: '',
     placeholder: '5215512345678@s.whatsapp.net',
     description:
-      'Chat of the message to react to (key.remoteJid of the webhook or send response): …@s.whatsapp.net, …@g.us or …@lid. A plain number becomes …@s.whatsapp.net.',
+      'Chat of the message to react to (key.remoteJid of the webhook or send response): …@s.whatsapp.net, …@g.us or …@lid. Plain numbers use Evolution’s Mexico, Argentina and Brazil digit rules; full JIDs are kept unchanged.',
   },
   {
     displayName: 'Message ID',
@@ -52,7 +52,7 @@ const properties: INodeProperties[] = [
         default: '',
         placeholder: '5215512345678@s.whatsapp.net',
         description:
-          'Groups only: JID of the member who sent the message (key.participant). Needed to react to messages of other members.',
+          'Groups only: JID of the member who sent the message (key.participant). Needed to react to messages of other members. Plain numbers use Evolution’s Mexico, Argentina and Brazil digit rules; full JIDs are kept unchanged.',
       },
     ],
   },
@@ -70,7 +70,7 @@ export const description = updateDisplayOptions(
  */
 export async function execute(this: IExecuteFunctions, itemIndex: number): Promise<IDataObject> {
   const node = this.getNode();
-  const remoteJid = toJid(this.getNodeParameter('remoteJid', itemIndex, ''));
+  const remoteJid = evolutionJid(this.getNodeParameter('remoteJid', itemIndex, ''));
   const id = getString.call(this, 'messageId', itemIndex);
   if (!remoteJid) throw operationError(node, itemIndex, 'Chat JID is required');
   if (!id) throw operationError(node, itemIndex, 'Message ID is required');
@@ -82,7 +82,7 @@ export async function execute(this: IExecuteFunctions, itemIndex: number): Promi
     fromMe: this.getNodeParameter('fromMe', itemIndex, false) === true,
   };
   const participant = String(options.participant ?? '').trim();
-  if (participant) key.participant = toJid(participant);
+  if (participant) key.participant = evolutionJid(participant);
 
   const reaction = String(this.getNodeParameter('reaction', itemIndex, '') ?? '').trim();
   return await postMessage.call(this, itemIndex, 'sendReaction', { key, reaction });

@@ -1,5 +1,9 @@
 import { EvolutionApi } from '../../nodes/EvolutionApi/EvolutionApi.node';
 import { resetRetryPolicy, setRetryPolicy } from '../../nodes/EvolutionApi/GenericFunctions';
+import { description as getManyDescription } from '../../nodes/EvolutionApi/resources/template/getMany.operation';
+import { description as updateDescription } from '../../nodes/EvolutionApi/resources/template/update.operation';
+import { operations as templateOperations } from '../../nodes/EvolutionApi/resources/template';
+import type { INodeProperties, INodePropertyOptions } from 'n8n-workflow';
 import { createMockExecuteFunctions, rl } from '../helpers/mockExecuteFunctions';
 
 // Tests of the template resource (Cloud API templates + WhatsApp Business catalog).
@@ -33,6 +37,12 @@ const TEMPLATES = [
 ];
 
 describe('template > getMany', () => {
+  it('discloses first-page-only results in the selector, Return All and filters', () => {
+    const getMany = (templateOperations.options as INodePropertyOptions[]).find((o) => o.value === 'getMany');
+    expect(getMany?.description).toContain('first Meta page');
+    expect(getManyDescription.find((p) => p.name === 'returnAll')?.description).toContain('first Meta page');
+    expect(getManyDescription.find((p) => p.name === 'filters')?.description).toContain('first Meta page');
+  });
   it('GET /template/find/:instance', async () => {
     const ctx = createMockExecuteFunctions({
       params: {
@@ -183,6 +193,7 @@ describe('template > create', () => {
         operation: 'create',
         instanceName: 'main',
         templateName: 'hello_world',
+        templateComponents: '[{"type":"BODY","text":"Hello"}]',
       },
     });
     ctx.http.reply('POST', '/template/create/main', META_ERROR, 400);
@@ -191,9 +202,35 @@ describe('template > create', () => {
       message: 'Bad request: Invalid parameter; Template name already exists in this language',
     });
   });
+
+  it.each([undefined, '', '[]'])('rejects absent or empty components (%#) before submitting a sample', async (templateComponents) => {
+    const ctx = createMockExecuteFunctions({
+      params: {
+        resource: 'template', operation: 'create', instanceName: 'main', templateName: 'hello',
+        ...(templateComponents !== undefined ? { templateComponents } : {}),
+      },
+    });
+    await expect(new EvolutionApi().execute.call(ctx)).rejects.toThrow('Name, Language and Components are required');
+    expect(ctx.http.calls).toEqual([]);
+  });
 });
 
 describe('template > update', () => {
+  it('documents the upstream TTL mapping bug and leaves the default TTL unset', async () => {
+    const fields = updateDescription.find((p) => p.name === 'updateFields');
+    const ttl = (fields?.options as INodeProperties[]).find((p) => p.name === 'ttl');
+    expect(ttl?.default).toBe(0);
+    expect(ttl?.description).toContain('Unsupported on Evolution API 2.3.7 and 2.4.0-rc2');
+    const ctx = createMockExecuteFunctions({
+      params: {
+        resource: 'template', operation: 'update', instanceName: 'main', templateId: '123',
+        updateFields: { ttl: 0, category: 'UTILITY' },
+      },
+    });
+    ctx.http.reply('POST', '/template/edit/main', { success: true });
+    await new EvolutionApi().execute.call(ctx);
+    expect(ctx.http.calls[0].body).toEqual({ templateId: '123', category: 'UTILITY' });
+  });
   it('POST /template/edit/:instance with only the added fields', async () => {
     const ctx = createMockExecuteFunctions({
       params: {

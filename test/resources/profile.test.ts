@@ -1,8 +1,14 @@
-import type { IDataObject, INodeExecutionData } from 'n8n-workflow';
+import type {
+  IDataObject,
+  INodeExecutionData,
+  INodeProperties,
+  INodePropertyOptions,
+} from 'n8n-workflow';
 
 import { EvolutionApi } from '../../nodes/EvolutionApi/EvolutionApi.node';
 import { resetRetryPolicy, setRetryPolicy } from '../../nodes/EvolutionApi/GenericFunctions';
 import { operations } from '../../nodes/EvolutionApi/resources/profile';
+import { description as privacyDescription } from '../../nodes/EvolutionApi/resources/profile/updatePrivacySettings.operation';
 import type { MockExecuteFunctions, MockOptions } from '../helpers/mockExecuteFunctions';
 import { binaryItem, createMockExecuteFunctions, rl } from '../helpers/mockExecuteFunctions';
 
@@ -296,6 +302,35 @@ describe('profile > updatePicture', () => {
 });
 
 describe('profile > updatePrivacySettings', () => {
+  it('offers only group audiences supported by Baileys', () => {
+    const settings = privacyDescription.find((field) => field.name === 'privacySettings');
+    const groupadd = (settings?.options as INodeProperties[]).find(
+      (field) => field.name === 'groupadd',
+    );
+    expect((groupadd?.options as INodePropertyOptions[]).map((option) => option.value)).toEqual([
+      'all',
+      'contacts',
+      'contact_blacklist',
+    ]);
+  });
+
+  it('rejects unsupported groupadd=none before any other privacy setting can be applied', async () => {
+    const ctx = profileContext('updatePrivacySettings', {
+      privacySettings: { readreceipts: 'none', groupadd: 'none' },
+    });
+
+    await expect(run(ctx)).rejects.toThrow('Invalid value "none" for "groupadd"');
+    expect(ctx.http.calls).toHaveLength(0);
+  });
+
+  it('does not resend an unsupported group audience read from the server', async () => {
+    const ctx = profileContext('updatePrivacySettings', { privacySettings: { last: 'none' } });
+    ctx.http.reply('GET', '/chat/fetchPrivacySettings/main', { ...PRIVACY, groupadd: 'none' });
+
+    await expect(run(ctx)).rejects.toThrow('Could not read the current value of: groupadd');
+    expect(ctx.http.calls).toHaveLength(1);
+  });
+
   it('reads the current settings, merges the changes and sends all six', async () => {
     const ctx = profileContext('updatePrivacySettings', {
       privacySettings: { readreceipts: 'none', last: 'none' },

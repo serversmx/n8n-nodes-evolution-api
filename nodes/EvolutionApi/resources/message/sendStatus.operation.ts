@@ -1,7 +1,8 @@
 import type { IDataObject, IExecuteFunctions, INodeProperties } from 'n8n-workflow';
 import { updateDisplayOptions } from 'n8n-workflow';
 
-import { buildMediaRequestBody, normalizeNumberList, toJid } from '../../GenericFunctions';
+import { buildMediaRequestBody, normalizeNumberList } from '../../GenericFunctions';
+import { evolutionJid } from '../chat/helpers';
 import {
   getString,
   mediaSourceProperties,
@@ -88,7 +89,7 @@ const properties: INodeProperties[] = [
     default: '',
     placeholder: '5215512345678, 5511999999999@s.whatsapp.net',
     description:
-      'Numbers or JIDs that can see the status, separated by commas. Evolution uses them verbatim: a number becomes <number>@s.whatsapp.net exactly as typed (no Mexico/Argentina/Brazil digit rules), so prefer the JID from a webhook or from Chat > Check Numbers. …@lid JIDs are kept as-is.',
+      'Numbers or JIDs that can see the status, separated by commas. The node converts plain numbers using Evolution’s Mexico, Argentina and Brazil digit rules. Full JIDs, including …@lid, are kept unchanged; prefer the JID from a webhook or from Chat > Check Numbers.',
     displayOptions: { show: { statusAllContacts: [false] } },
   },
 ];
@@ -111,7 +112,8 @@ const DEFAULT_MIME_TYPE: Record<string, string> = { image: 'image/jpeg', video: 
  *   Raw base64 (and therefore a multipart upload, which Evolution turns into raw base64) would
  *   be opened as a local file path on the server.
  * - audio: `content` is a URL or raw base64 (processAudioMp4), so a binary can go as multipart.
- * - statusJidList is used verbatim: full JIDs (toJid). Evolution sends in batches of 10.
+ * - statusJidList is used verbatim: convert plain numbers with evolutionJid first. Evolution
+ *   sends in batches of 10.
  */
 export async function execute(this: IExecuteFunctions, itemIndex: number): Promise<IDataObject> {
   const node = this.getNode();
@@ -123,7 +125,7 @@ export async function execute(this: IExecuteFunctions, itemIndex: number): Promi
     fields.allContacts = true;
   } else {
     const recipients = normalizeNumberList(this.getNodeParameter('statusRecipients', itemIndex, ''))
-      .map((recipient) => toJid(recipient))
+      .map((recipient) => evolutionJid(recipient))
       .filter((recipient, index, list) => list.indexOf(recipient) === index);
     if (recipients.length === 0) {
       throw operationError(

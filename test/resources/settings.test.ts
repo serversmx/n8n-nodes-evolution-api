@@ -203,6 +203,35 @@ describe('settings > set', () => {
       httpCode: '400',
     });
   });
+
+  it('can clear a stored Wavoip token without triggering an upstream socket reconnect', async () => {
+    const ctx = createMockExecuteFunctions({
+      params: {
+        resource: 'settings', operation: 'set', instanceName: 'main',
+        updateFields: { wavoipToken: '' },
+      },
+    });
+    ctx.http.reply('GET', '/settings/find/main', STORED);
+    ctx.http.reply('POST', '/settings/set/main', { settings: {} }, 201);
+    await new EvolutionApi().execute.call(ctx);
+    expect(ctx.http.calls[1].body).toMatchObject({ wavoipToken: '', rejectCall: true });
+  });
+
+  it('explains a Wavoip socket failure and how to recover after the settings may be saved', async () => {
+    const ctx = createMockExecuteFunctions({
+      params: {
+        resource: 'settings', operation: 'set', instanceName: 'main',
+        updateFields: { alwaysOnline: true },
+      },
+    });
+    ctx.http.reply('GET', '/settings/find/main', STORED);
+    ctx.http.reply('POST', '/settings/set/main', { status: 500, message: "Cannot read properties of undefined (reading 'ws')" }, 500);
+    await expect(new EvolutionApi().execute.call(ctx)).rejects.toMatchObject({
+      httpCode: '500',
+      description: expect.stringContaining('Add Wavoip Token with an empty value'),
+    });
+    expect(ctx.http.calls).toHaveLength(2);
+  });
 });
 
 describe('settings > buildSettingsBody', () => {

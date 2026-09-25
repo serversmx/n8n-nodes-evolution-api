@@ -36,8 +36,64 @@ export interface WebhookRegistration extends IDataObject {
 }
 
 const REGISTRATIONS_KEY = 'registrations';
+const MAX_RECOVERY_REGISTRATIONS = 1000;
+const recoveryRegistrations = new Map<string, WebhookRegistration>();
 
 const KNOWN_EVENTS = new Set(EVOLUTION_EVENT_OPTIONS.map((option) => String(option.value)));
+
+function recoveryKey(context: IHookFunctions, webhookUrl: string): string {
+  return JSON.stringify([context.getWorkflow().id ?? '', context.getNode().id, webhookUrl]);
+}
+
+/**
+ * n8n activation rollback reloads static data from the database before newly created webhook
+ * registrations have been saved. Keep a bounded process-local copy for that cleanup path.
+ * It cannot recover a snapshot after a process restart or on another worker.
+ */
+export function rememberRegistration(
+  context: IHookFunctions,
+  webhookUrl: string,
+  registration: WebhookRegistration,
+): void {
+  const key = recoveryKey(context, webhookUrl);
+  recoveryRegistrations.delete(key);
+  recoveryRegistrations.set(key, registration);
+  if (recoveryRegistrations.size > MAX_RECOVERY_REGISTRATIONS) {
+    const oldest = recoveryRegistrations.keys().next().value;
+    if (oldest !== undefined) recoveryRegistrations.delete(oldest);
+  }
+}
+
+export function getRecoveryRegistration(
+  context: IHookFunctions,
+  webhookUrl: string,
+): WebhookRegistration | undefined {
+  return recoveryRegistrations.get(recoveryKey(context, webhookUrl));
+}
+
+export function forgetRegistration(context: IHookFunctions, webhookUrl: string): void {
+  recoveryRegistrations.delete(recoveryKey(context, webhookUrl));
+}
+
+/** Forget process-local recovery state (tests simulate a restart). */
+export function resetRegistrationMemory(): void {
+  recoveryRegistrations.clear();
+}
+
+/** Recognize only the random-secret header shapes this trigger writes. */
+export function hasTriggerHeaders(found: IDataObject): boolean {
+  if (!isPlainObject(found.headers)) return false;
+  const entries = Object.entries(found.headers);
+  return (
+    entries.length > 0 &&
+    entries.every(
+      ([name, value]) =>
+        (name === 'jwt_key' || name === SECRET_HEADER_NAME) &&
+        typeof value === 'string' &&
+        /^[a-f0-9]{64}$/.test(value),
+    )
+  );
+}
 
 export function getRegistrations(staticData: IDataObject): Record<string, WebhookRegistration> {
   const raw = staticData[REGISTRATIONS_KEY];

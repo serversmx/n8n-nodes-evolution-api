@@ -146,6 +146,11 @@ export async function execute(this: IExecuteFunctions, itemIndex: number): Promi
     });
   } catch (error) {
     if (Object.keys(qs).length > 0 && isFilterNotFoundError(error)) return [];
+    if (Object.keys(qs).length > 0 && error instanceof NodeApiError && error.httpCode === '401') {
+      error.message = 'Unauthorized: the API key was rejected or the instance filter matched nothing';
+      error.description =
+        'An instance token only sees instances with that token. A name or ID filter for another instance returns 401 even when the token is valid. Remove the filters to check the credential; Number is only filtered by the server with a global API key.';
+    }
     const nodeError = error as NodeApiError | NodeOperationError;
     throw nodeError;
   }

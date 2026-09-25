@@ -28,6 +28,37 @@ afterEach(() => resetRetryPolicy());
 const node = new EvolutionApi();
 
 describe('execute loop', () => {
+  it.each(['delete', 'logout'])('never retargets an empty instance to the credential default for %s', async (operation) => {
+    const ctx = createMockExecuteFunctions({
+      params: { resource: 'instance', operation },
+      items: [{ json: {} }, { json: {} }],
+      itemParams: [{ instanceName: rl('old-tenant') }, { instanceName: rl('') }],
+      credentials: { defaultInstance: 'production' },
+      continueOnFail: true,
+    });
+    ctx.http.reply('DELETE', `/instance/${operation}/old-tenant`, { status: 'SUCCESS' });
+    const [output] = await node.execute.call(ctx);
+    expect(ctx.http.calls.map((call) => call.path)).toEqual([`/instance/${operation}/old-tenant`]);
+    expect(output[1]).toMatchObject({
+      json: { error: 'Instance Name is required for this operation' },
+      pairedItem: { item: 1 },
+    });
+  });
+
+  it('keeps invalid header secrets out of continueOnFail output', async () => {
+    const ctx = createMockExecuteFunctions({
+      params: {
+        resource: 'instance', operation: 'create', newInstanceName: 'x', integration: 'EVOLUTION',
+        webhookConfig: { url: 'https://receiver.test', headers: '{"jwt_key":"private-secret",}' },
+      },
+      continueOnFail: true,
+    });
+    const result = await node.execute.call(ctx);
+    expect(JSON.stringify(result)).toContain('Invalid JSON');
+    expect(JSON.stringify(result)).not.toContain('private-secret');
+    expect(ctx.http.calls).toHaveLength(0);
+  });
+
   it('processes every input item with its own parameters and pairs the output', async () => {
     // Only instance operations are used here so resource agents never have to touch this file.
     const ctx = createMockExecuteFunctions({

@@ -19,11 +19,10 @@ const properties: INodeProperties[] = [
     displayName: 'Message ID',
     name: 'messageId',
     type: 'string',
-    required: true,
     default: '',
     placeholder: '3EB0C767D26A1D7B5C2A',
     description:
-      'ID (key.id) of the image, video, audio, document or sticker message. Evolution loads it from its stored messages (DATABASE_SAVE_DATA_NEW_MESSAGE), unless "Full Message" is set in the options (then its key.id wins).',
+      'ID (key.id) of the image, video, audio, document or sticker message. Optional when Options > Full Message includes key.id. Otherwise Evolution loads it from its stored messages (DATABASE_SAVE_DATA_NEW_MESSAGE).',
   },
   {
     displayName: 'Put Output File in Field',

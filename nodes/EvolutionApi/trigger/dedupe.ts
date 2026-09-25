@@ -81,8 +81,8 @@ function getMemoryLog(scope: string): Map<string, number> {
 }
 
 /**
- * True when `key` was already accepted within the TTL. Otherwise the key is remembered in both
- * stores and false is returned. `scope` separates nodes/webhook URLs in the in-process cache.
+ * Read-only check for a delivery accepted within the TTL. Do not remember a delivery until
+ * building its output (including asynchronous binary storage) has succeeded.
  */
 export function isDuplicateDelivery(
   staticData: IDataObject,
@@ -92,17 +92,28 @@ export function isDuplicateDelivery(
   ttlMs = DEDUPE_TTL_MS,
 ): boolean {
   const cutoff = now - ttlMs;
-  const memoryLog = getMemoryLog(scope);
+  const memoryLog = memoryLogs.get(scope);
   const staticLog = readStaticLog(staticData);
 
-  const seenInMemory = memoryLog.get(key);
+  const seenInMemory = memoryLog?.get(key);
   const seenInStatic = staticLog[key];
-  if (
+  return (
     (seenInMemory !== undefined && seenInMemory > cutoff) ||
     (seenInStatic !== undefined && seenInStatic > cutoff)
-  ) {
-    return true;
-  }
+  );
+}
+
+/** Record a successfully built output in both bounded stores. */
+export function rememberDelivery(
+  staticData: IDataObject,
+  scope: string,
+  key: string,
+  now: number,
+  ttlMs = DEDUPE_TTL_MS,
+): void {
+  const cutoff = now - ttlMs;
+  const memoryLog = getMemoryLog(scope);
+  const staticLog = readStaticLog(staticData);
 
   memoryLog.delete(key);
   memoryLog.set(key, now);
@@ -114,7 +125,6 @@ export function isDuplicateDelivery(
   kept.push([key, now]);
   // Assign a new object: n8n only notices changes made through the static data proxy.
   staticData[STATIC_KEY] = Object.fromEntries(kept.slice(-DEDUPE_MAX_STATIC_ENTRIES));
-  return false;
 }
 
 /** Forget the in-process cache (tests). */

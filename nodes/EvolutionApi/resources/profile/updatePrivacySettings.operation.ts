@@ -15,14 +15,14 @@ const AUDIENCE_OPTIONS: INodePropertyOptions[] = [
   { name: 'Nobody', value: 'none' },
 ];
 
-/** Allowed values of each privacySettingsSchema field (all six are required by Evolution). */
+/** Allowed WhatsApp values (Evolution requires all six but its schema also accepts groupadd=none). */
 export const PRIVACY_SETTING_VALUES: Record<string, string[]> = {
   readreceipts: ['all', 'none'],
   profile: ['all', 'contacts', 'contact_blacklist', 'none'],
   status: ['all', 'contacts', 'contact_blacklist', 'none'],
   online: ['all', 'match_last_seen'],
   last: ['all', 'contacts', 'contact_blacklist', 'none'],
-  groupadd: ['all', 'contacts', 'contact_blacklist', 'none'],
+  groupadd: ['all', 'contacts', 'contact_blacklist'],
 };
 
 const properties: INodeProperties[] = [
@@ -33,13 +33,13 @@ const properties: INodeProperties[] = [
     placeholder: 'Add Setting',
     default: {},
     description:
-      'Only the settings you add are changed: the node reads the current privacy settings first and sends them back with your changes',
+      'Only the settings you add are changed: the node reads the current privacy settings first and sends them back with your changes. Evolution applies them in sequence; an API failure can leave some settings changed.',
     options: [
       {
         displayName: 'Add Me to Groups',
         name: 'groupadd',
         type: 'options',
-        options: AUDIENCE_OPTIONS,
+        options: AUDIENCE_OPTIONS.filter((option) => option.value !== 'none'),
         default: 'contacts',
         description: 'Who can add the account to groups',
       },

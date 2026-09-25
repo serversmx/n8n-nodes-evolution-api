@@ -6,6 +6,31 @@ import type {
 } from 'n8n-workflow';
 
 import { base64ToBinary, isPlainObject } from '../../GenericFunctions';
+import { redactWebhookSecrets } from '../webhook/helpers';
+
+/** Creation returns a different shape from fetchInstances; redact before adding binary data. */
+export function redactCreatedInstanceSecrets(response: IDataObject): IDataObject {
+  const copy: IDataObject = { ...response };
+  delete copy.hash;
+  delete copy.token;
+  for (const [relation, secret] of [
+    ['instance', 'accessTokenWaBusiness'],
+    ['chatwoot', 'token'],
+    ['settings', 'wavoipToken'],
+  ]) {
+    if (isPlainObject(copy[relation])) {
+      const nested: IDataObject = { ...copy[relation] };
+      delete nested[secret];
+      copy[relation] = nested;
+    }
+  }
+  if (isPlainObject(copy.webhook)) {
+    const webhook = copy.webhook;
+    const redacted = redactWebhookSecrets({ headers: webhook.webhookHeaders });
+    copy.webhook = { ...webhook, webhookHeaders: redacted.headers };
+  }
+  return copy;
+}
 
 /** "Options" entries shared by Create and Connect to output the QR code as a PNG file. */
 export const qrCodeBinaryOptions: INodeProperties[] = [

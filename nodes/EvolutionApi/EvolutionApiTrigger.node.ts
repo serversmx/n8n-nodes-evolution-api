@@ -25,7 +25,7 @@ import {
   TRIGGER_24_ONLY_EVENTS,
   TRIGGER_EVENT_OPTIONS,
 } from './trigger/constants';
-import { getDeliveryKey, isDuplicateDelivery } from './trigger/dedupe';
+import { getDeliveryKey, isDuplicateDelivery, rememberDelivery } from './trigger/dedupe';
 import {
   findWebhookMedia,
   getEventTimestamp,
@@ -42,11 +42,15 @@ import {
   buildRestoreBody,
   buildSetBody,
   findWebhook,
+  forgetRegistration,
+  getRecoveryRegistration,
   getRegistrations,
   getServerVersion,
   hasRegistrationHeaders,
+  hasTriggerHeaders,
   isOtherEndpointOfNode,
   isVersionBelow,
+  rememberRegistration,
   saveRegistrations,
   setWebhook,
   snapshotWebhook,
@@ -97,7 +101,7 @@ async function getInstanceName(context: IHookFunctions): Promise<string> {
 function getManualVerification(
   context: IHookFunctions | IWebhookFunctions,
 ): { config: Omit<VerificationConfig, 'jwtLeewaySeconds' | 'nowSeconds'> } | { error: string } {
-  const method = context.getNodeParameter('manualAuth', 'none') as ManualAuthMethod;
+  const method = context.getNodeParameter('manualAuth', 'jwt') as ManualAuthMethod;
   if (!MANUAL_AUTH_METHODS.includes(method)) {
     return { error: `Unknown authentication method "${String(method)}"` };
   }
@@ -302,7 +306,7 @@ export class EvolutionApiTrigger implements INodeType {
         ],
         default: 'jwtAndHeader',
         description:
-          'How Evolution proves that a delivery comes from it. The secrets are generated on activation and stored in the workflow static data. Unauthenticated requests get 401.',
+          'How Evolution proves that a delivery comes from it. The secrets are generated on activation and stored in the workflow static data. Unauthenticated requests get 401. Missing registration state gets 503 so Evolution can retry while activation completes.',
         displayOptions: { show: { mode: ['automatic'] } },
       },
       {
@@ -326,7 +330,7 @@ export class EvolutionApiTrigger implements INodeType {
             name: 'None',
             value: 'none',
             description:
-              'Accept every request. Required for the global webhook, which cannot send headers.',
+              'Accept every request: the webhook URL is the only protection. Required for the global webhook, which cannot send headers.',
           },
           {
             name: 'Secret Header Only',
@@ -334,7 +338,7 @@ export class EvolutionApiTrigger implements INodeType {
             description: 'Require a static header configured in the instance webhook headers',
           },
         ],
-        default: 'none',
+        default: 'jwt',
         description:
           'How to verify deliveries. Requests that fail verification get 401 (Evolution does not retry 401).',
         displayOptions: { show: { mode: ['manual'] } },
@@ -496,6 +500,11 @@ export class EvolutionApiTrigger implements INodeType {
           if ('error' in manual) {
             throw new NodeOperationError(this.getNode(), manual.error);
           }
+          if (!manual.config.jwtSecret && !manual.config.secretHeader) {
+            this.logger.warn(
+              `Evolution API Trigger: Manual mode without authentication accepts any request to ${getWebhookUrl(this)}`,
+            );
+          }
           return true;
         }
 
@@ -552,8 +561,23 @@ export class EvolutionApiTrigger implements INodeType {
         const isTest = this.getMode() === 'manual';
         const staticData = this.getWorkflowStaticData('node');
         const registrations = getRegistrations(staticData);
-        const existing = registrations[webhookUrl];
+        const existing = registrations[webhookUrl] ?? getRecoveryRegistration(this, webhookUrl);
         const found = await findWebhook.call(this, instance);
+
+        if (
+          !isTest &&
+          existing?.instanceName !== instanceName &&
+          isOtherEndpointOfNode(found.url, webhookUrl, this.getNode().webhookId)
+        ) {
+          throw new NodeOperationError(
+            this.getNode(),
+            "A 'Listen for test event' session currently holds the instance webhook; stop it and activate again",
+            {
+              description:
+                'Its original webhook snapshot is in the test session. Stop that session so it can restore the original before activation.',
+            },
+          );
+        }
 
         let previous: IDataObject | null;
         if (
@@ -591,6 +615,8 @@ export class EvolutionApiTrigger implements INodeType {
           ...(isTest ? { test: true } : {}),
         };
 
+        // Keep the snapshot before the HTTP write: a timeout may hide a successful takeover.
+        rememberRegistration(this, webhookUrl, registration);
         await setWebhook.call(
           this,
           instance,
@@ -623,12 +649,47 @@ export class EvolutionApiTrigger implements INodeType {
         const webhookUrl = this.getNodeWebhookUrl('default');
         const staticData = this.getWorkflowStaticData('node');
         const registrations = getRegistrations(staticData);
-        const registration = webhookUrl ? registrations[webhookUrl] : undefined;
-        if (!webhookUrl || !registration) return true;
+        if (!webhookUrl) return true;
+        const persisted = registrations[webhookUrl];
+        const registration = persisted ?? getRecoveryRegistration(this, webhookUrl);
+        if (!registration) {
+          if (getTriggerMode(this) === 'manual') return true;
+          // After a restart there is no trustworthy snapshot to restore. Only disable this
+          // exact endpoint with the generated-header shape; never touch its other endpoint.
+          try {
+            const instanceName = await getInstanceName(this);
+            const instance = encodeURIComponent(instanceName);
+            const found = await findWebhook.call(this, instance);
+            if (found.url === webhookUrl && hasTriggerHeaders(found)) {
+              await setWebhook.call(this, instance, buildDisableBody(webhookUrl));
+              this.logger.error(
+                `Evolution API Trigger: disabled the orphaned webhook of instance "${instanceName}"; its original configuration could not be recovered`,
+              );
+            }
+            return true;
+          } catch (error) {
+            this.logger.error('Evolution API Trigger: could not clean up an unregistered webhook', {
+              error: (error as Error).message,
+            });
+            return false;
+          }
+        }
 
         const instance = encodeURIComponent(registration.instanceName);
         try {
           const found = await findWebhook.call(this, instance);
+          // Process-local recovery is usable only while Evolution still carries our exact
+          // secrets. A different registration at the same URL belongs to its current owner.
+          if (
+            !persisted &&
+            (found.url !== webhookUrl || !hasRegistrationHeaders(found, registration))
+          ) {
+            forgetRegistration(this, webhookUrl);
+            this.logger.info(
+              `Evolution API Trigger: the webhook of instance "${registration.instanceName}" no longer matches the pending registration; left untouched`,
+            );
+            return true;
+          }
           if (
             found.url === webhookUrl ||
             (registration.test !== true &&
@@ -651,7 +712,7 @@ export class EvolutionApiTrigger implements INodeType {
             `Evolution API Trigger: could not restore the webhook of instance "${registration.instanceName}"`,
             { error: (error as Error).message },
           );
-          if (registration.previous) {
+          if (persisted && registration.previous) {
             // Stop Evolution from calling a URL that is about to disappear.
             try {
               await setWebhook.call(this, instance, buildDisableBody(webhookUrl));
@@ -667,6 +728,7 @@ export class EvolutionApiTrigger implements INodeType {
 
         delete registrations[webhookUrl];
         saveRegistrations(staticData, registrations);
+        forgetRegistration(this, webhookUrl);
         return true;
       },
     },
@@ -701,7 +763,8 @@ export class EvolutionApiTrigger implements INodeType {
         this.logger.warn(
           'Evolution API Trigger: request rejected, this webhook is not registered (deactivate and activate the workflow again)',
         );
-        return respond(this, 401, 'Unauthorized');
+        this.getResponseObject().setHeader('Retry-After', '5');
+        return respond(this, 503, 'Webhook registration is not ready; retry later');
       }
       // Normally one candidate; a request is genuine when any of our registrations signed it.
       const attempts = registrations.map((registration) =>
@@ -740,10 +803,12 @@ export class EvolutionApiTrigger implements INodeType {
     if (reason) return { webhookResponse: { received: true, ignored: reason } };
 
     // 4. Retried deliveries.
+    let delivery: { scope: string; key: string } | undefined;
     if (options.deduplicate !== false) {
       const endpoint = getServedWebhookUrl(this) ?? `${webhookUrl}:${this.getMode()}`;
       const scope = `${String(this.getWorkflow().id ?? '')}:${this.getNode().id}:${endpoint}`;
-      if (isDuplicateDelivery(staticData, scope, getDeliveryKey(body), Date.now())) {
+      delivery = { scope, key: getDeliveryKey(body) };
+      if (isDuplicateDelivery(staticData, scope, delivery.key, Date.now())) {
         return { webhookResponse: { received: true, ignored: 'duplicate delivery' } };
       }
     }
@@ -771,6 +836,13 @@ export class EvolutionApiTrigger implements INodeType {
       }
     }
 
+    if (delivery) {
+      // Binary preparation can yield. Re-check so two simultaneous retries cannot both run.
+      if (isDuplicateDelivery(staticData, delivery.scope, delivery.key, Date.now())) {
+        return { webhookResponse: { received: true, ignored: 'duplicate delivery' } };
+      }
+      rememberDelivery(staticData, delivery.scope, delivery.key, Date.now());
+    }
     return { workflowData: [[item]] };
   }
 }

@@ -32,7 +32,7 @@ const properties: INodeProperties[] = [
     default: [],
     displayOptions: { show: { transportEnabled: [true] } },
     description:
-      'Events to publish. Leave empty to publish every event. Evolution API 2.3.x rejects "Messaging History Set" with a 400 error.',
+      'Events to publish. Leave empty to keep the stored selection, or publish every event when no selection exists. Use Options > All Events to replace a stored selection with every event. Evolution API 2.3.x rejects "Messaging History Set".',
   },
   {
     displayName: 'Pusher Settings',
@@ -88,6 +88,13 @@ const properties: INodeProperties[] = [
     default: {},
     options: [
       {
+        displayName: 'All Events',
+        name: 'allEvents',
+        type: 'boolean',
+        default: false,
+        description: 'Whether to replace the stored Events selection with every supported event',
+      },
+      {
         displayName: 'Include Secrets',
         name: 'includeSecrets',
         type: 'boolean',
@@ -125,21 +132,28 @@ export async function execute(this: IExecuteFunctions, itemIndex: number): Promi
   }
   const enabled = this.getNodeParameter('transportEnabled', itemIndex, true) as boolean;
   const options = this.getNodeParameter('options', itemIndex, {}) as IDataObject;
-  const events = enabled
+  let events = enabled && options.allEvents !== true
     ? normalizeEvents(this.getNodeParameter('transportEvents', itemIndex, []))
     : [];
 
-  const config: IDataObject = { enabled, events };
-  if (transport.name === 'pusher') {
-    const changes = this.getNodeParameter('pusherConfig', itemIndex, {}) as IDataObject;
-    const current = (await evolutionApiRequest.call(
+  let current: IDataObject = {};
+  if (transport.name === 'pusher' || (enabled && options.allEvents !== true && events.length === 0)) {
+    current = (await evolutionApiRequest.call(
       this,
       'GET',
-      `/pusher/find/${instance}`,
+      `/${transport.name}/find/${instance}`,
       {},
       {},
       { itemIndex },
     )) as IDataObject;
+  }
+  if (enabled && options.allEvents !== true && events.length === 0) {
+    events = normalizeEvents(current.events);
+  }
+
+  const config: IDataObject = { enabled, events };
+  if (transport.name === 'pusher') {
+    const changes = this.getNodeParameter('pusherConfig', itemIndex, {}) as IDataObject;
     for (const key of PUSHER_KEYS) {
       const value = changes[key] !== undefined ? changes[key] : current[key];
       config[key] = typeof value === 'string' ? value.trim() : '';
@@ -151,7 +165,8 @@ export async function execute(this: IExecuteFunctions, itemIndex: number): Promi
     if (enabled && missing.length > 0) {
       throw new NodeOperationError(node, `Missing Pusher settings: ${missing.join(', ')}`, {
         itemIndex,
-        description: 'Add the missing values under "Pusher Settings".',
+        description:
+          'Add the missing values under "Pusher Settings". If values were previously saved, verify PUSHER_ENABLED=true on the server: Evolution hides them when Pusher is disabled.',
       });
     }
   }
@@ -180,6 +195,14 @@ export async function execute(this: IExecuteFunctions, itemIndex: number): Promi
         description: `The ${transport.info.label} integration is disabled on the server: set ${transport.info.env}=true in the Evolution API environment${sqsNote} and restart it.`,
       },
     );
+  }
+
+  if (transport.name === 'pusher' && enabled && Object.keys(current).length === 0) {
+    response = {
+      ...response,
+      notice:
+        'Pusher configuration was saved, but event delivery is unverified. No previous configuration was readable: this can mean a first setup or PUSHER_ENABLED=false. Evolution saves Pusher settings even when it is disabled; verify PUSHER_ENABLED=true on the server.',
+    };
   }
 
   return options.includeSecrets === true ? response : redactTransportSecrets(response);

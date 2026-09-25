@@ -10,7 +10,7 @@ export const description: INodeProperties[] = [];
  * A connected instance is logged out first. 2.4 keeps deleting even when that logout fails.
  */
 export async function execute(this: IExecuteFunctions, itemIndex: number): Promise<IDataObject> {
-  const instance = await resolveInstanceName.call(this, itemIndex);
+  const instance = await resolveInstanceName.call(this, itemIndex, { allowDefault: false });
   return (await evolutionApiRequest.call(
     this,
     'DELETE',

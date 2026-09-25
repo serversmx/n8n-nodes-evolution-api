@@ -53,7 +53,7 @@ const properties: INodeProperties[] = [
     required: true,
     default: '',
     typeOptions: { rows: 2 },
-    description: `Text shown above the cards. ${REQUIRES_24}`,
+    description: `Text shown above the cards. For a single card without an image, the node prepends this text to the card body. ${REQUIRES_24}`,
   },
   interactiveInputModeProperty,
   {
@@ -76,6 +76,7 @@ const properties: INodeProperties[] = [
             name: 'title',
             type: 'string',
             default: '',
+            description: 'Prepended in bold to the card body because Evolution ignores card titles',
           },
           {
             displayName: 'Body',
@@ -124,9 +125,10 @@ const properties: INodeProperties[] = [
     name: 'carouselCardsJson',
     type: 'json',
     required: true,
-    default: CARDS_EXAMPLE,
+    default: '',
+    placeholder: CARDS_EXAMPLE,
     description:
-      'Array of 1-10 cards: { "title"?, "body", "footer"?, "imageUrl"?, "buttons": [1-3 buttons of type reply, url, call or copy] }. An object with a "cards" key is accepted too.',
+      'Array of 1-10 cards: { "title"?, "body", "footer"?, "imageUrl"?, "buttons": [1-3 buttons of type reply, url, call or copy] }. The node prepends each title in bold to its card body. An object with a "cards" key is accepted too.',
     displayOptions: { show: { interactiveInputMode: ['json'] } },
   },
   sendOptionsProperty([delayOption(), ...mentionOptions, ...quotedOptions()]),
@@ -175,8 +177,9 @@ export function normalizeCards(
       ),
     );
 
-    const card: IDataObject = { body, buttons };
-    for (const key of ['title', 'footer', 'imageUrl']) {
+    const title = str(rawCard, 'title');
+    const card: IDataObject = { body: title ? `*${title}*\n\n${body}` : body, buttons };
+    for (const key of ['footer', 'imageUrl']) {
       const value = str(rawCard, key);
       if (value) card[key] = value;
     }
@@ -187,7 +190,7 @@ export function normalizeCards(
 /**
  * POST /message/sendCarousel/:instanceName (carouselMessageSchema, HTTP 201). Evolution API 2.4+
  * only: 2.3.x answers 404 "Cannot POST". WhatsApp Baileys only.
- * { number, body, cards: [{ title?, body, footer?, imageUrl?, buttons: [...] }], delay?, quoted?,
+ * { number, body, cards: [{ body, footer?, imageUrl?, buttons: [...] }], delay?, quoted?,
  *   mentionsEveryOne?, mentioned? }
  */
 export async function execute(this: IExecuteFunctions, itemIndex: number): Promise<IDataObject> {
@@ -208,6 +211,11 @@ export async function execute(this: IExecuteFunctions, itemIndex: number): Promi
         )
       : getCollectionEntries(this.getNodeParameter('carouselCards', itemIndex, {}), 'card');
   const cards = normalizeCards(node, itemIndex, rawCards);
+  // Evolution's single-card optimization ignores the top-level body (and always ignores card
+  // titles), so preserve all entered text in the body WhatsApp actually receives.
+  if (cards.length === 1 && !cards[0].imageUrl) {
+    cards[0].body = `${body}\n\n${cards[0].body}`;
+  }
 
   const options = this.getNodeParameter('options', itemIndex, {}) as IDataObject;
   const payload = applySendOptions(node, itemIndex, options, { number, body, cards });

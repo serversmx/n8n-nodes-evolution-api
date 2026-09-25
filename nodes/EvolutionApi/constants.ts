@@ -36,7 +36,7 @@ export const EVOLUTION_EVENT_OPTIONS: INodePropertyOptions[] = [
   {
     name: 'Messaging History Set',
     value: 'MESSAGING_HISTORY_SET',
-    description: `History sync batches. ${REQUIRES_24}`,
+    description: `History sync finished (counts). ${REQUIRES_24}`,
   },
   { name: 'Presence Update', value: 'PRESENCE_UPDATE' },
   { name: 'QR Code Updated', value: 'QRCODE_UPDATED' },

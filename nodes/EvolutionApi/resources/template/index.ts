@@ -57,14 +57,14 @@ export const operations: INodeProperties = {
       name: 'Get Many',
       value: 'getMany',
       description:
-        'Get the message templates of a WhatsApp Cloud API instance with their status and components',
+        'Get the first Meta page of message templates (Evolution discards pagination cursors; WhatsApp Cloud API instances only)',
       action: 'Get many templates',
     },
     {
       name: 'Update',
       value: 'update',
       description:
-        'Change the category, components or message TTL of a message template (WhatsApp Cloud API instances only)',
+        'Change the category or components of a message template (TTL mapping is unsupported on Evolution 2.3.7 and 2.4.0-rc2; WhatsApp Cloud API instances only)',
       action: 'Update a template',
     },
   ],

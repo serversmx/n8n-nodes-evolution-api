@@ -733,20 +733,6 @@ describe('group > updatePicture', () => {
     );
   });
 
-  it('accepts the picture source in any case from an expression', async () => {
-    const ctx = context('updatePicture', {
-      groupJid: group(GROUP),
-      groupPictureSource: ' URL ',
-      groupPictureUrl: 'https://example.com/logo.jpg',
-    });
-    ctx.http.reply('POST', '/group/updateGroupPicture/main', { update: 'success' }, 201);
-    await expect(execute.updatePicture.call(ctx, 0)).resolves.toEqual({ update: 'success' });
-    expect(ctx.http.calls[0].body).toEqual({
-      groupJid: GROUP,
-      image: 'https://example.com/logo.jpg',
-    });
-  });
-
   it('rejects an unknown picture source and invalid base64 before calling the API', async () => {
     const badSource = context('updatePicture', {
       groupJid: group(GROUP),

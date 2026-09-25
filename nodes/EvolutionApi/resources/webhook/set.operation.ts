@@ -42,7 +42,7 @@ const properties: INodeProperties[] = [
     default: [],
     displayOptions: { show: { webhookEnabled: [true] } },
     description:
-      'Events to send. Leave empty to receive every event. Evolution API 2.3.x rejects "Messaging History Set" with a 400 error.',
+      'Events to send. Leave empty to keep the stored selection, or receive every event when no selection exists. Use Options > All Events to replace a stored selection with every event. Evolution API 2.3.x rejects "Messaging History Set".',
   },
   {
     displayName: 'Additional Fields',
@@ -94,7 +94,16 @@ const properties: INodeProperties[] = [
     type: 'collection',
     placeholder: 'Add Option',
     default: {},
-    options: [includeWebhookSecretsOption],
+    options: [
+      {
+        displayName: 'All Events',
+        name: 'allEvents',
+        type: 'boolean',
+        default: false,
+        description: 'Whether to replace the stored Events selection with every supported event',
+      },
+      includeWebhookSecretsOption,
+    ],
   },
 ];
 
@@ -111,7 +120,7 @@ export const description = updateDisplayOptions(
  * - `events` is always sent: with enabled=true and no `events` the controller crashes on
  *   `events.length` (HTTP 500); `[]` subscribes to every event; enabled=false stores `[]`.
  * - Keys that are not sent (byEvents, base64, headers) keep their stored value (Prisma upsert).
- * GET /webhook/find/:instanceName runs first only when the current URL or headers are needed.
+ * GET /webhook/find/:instanceName runs first when the current URL, headers or events are needed.
  */
 export async function execute(this: IExecuteFunctions, itemIndex: number): Promise<IDataObject> {
   const node = this.getNode();
@@ -183,6 +192,12 @@ export async function execute(this: IExecuteFunctions, itemIndex: number): Promi
       }
       if (jwtKey) headers.jwt_key = jwtKey;
       webhook.headers = headers;
+    }
+
+    if (options.allEvents === true) {
+      webhook.events = [];
+    } else if ((webhook.events as string[]).length === 0) {
+      webhook.events = normalizeEvents((await readCurrent()).events);
     }
   }
 

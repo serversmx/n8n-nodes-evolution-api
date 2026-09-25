@@ -30,7 +30,7 @@ export const RESOURCES: ResourceDefinition[] = [
   {
     name: 'Chat',
     value: 'chat',
-    description: 'Check numbers, read/archive chats, find contacts, chats and messages',
+    description: 'Check numbers and manage chats, contacts and stored messages (edit, delete, download, votes, receipts, presence, block)',
     module: chat,
   },
   {
@@ -90,7 +90,7 @@ export const RESOURCES: ResourceDefinition[] = [
   {
     name: 'Template',
     value: 'template',
-    description: 'WhatsApp Cloud API message templates',
+    description: 'WhatsApp Cloud API message templates and the WhatsApp Business product catalog',
     module: template,
   },
   {

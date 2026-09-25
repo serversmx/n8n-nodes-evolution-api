@@ -148,7 +148,7 @@ export const TRANSPORT_OPTIONS: INodePropertyOptions[] = [
     name: 'Pusher',
     value: 'pusher',
     description:
-      'Trigger events on Pusher Channels with per-instance app credentials (PUSHER_ENABLED=true)',
+      'Trigger events on Pusher Channels with per-instance app credentials (PUSHER_ENABLED=true). Evolution can save settings while disabled; a successful save alone does not confirm event delivery.',
   },
   {
     name: 'RabbitMQ',

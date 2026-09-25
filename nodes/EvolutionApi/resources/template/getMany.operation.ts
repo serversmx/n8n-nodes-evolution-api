@@ -10,7 +10,8 @@ const properties: INodeProperties[] = [
     name: 'returnAll',
     type: 'boolean',
     default: false,
-    description: 'Whether to return all results or only up to a given limit',
+    description:
+      'Whether to return all results in the first Meta page instead of applying a limit. Evolution API 2.3.7 and 2.4.0-rc2 discard pagination cursors; use the Meta Graph API directly to retrieve additional pages.',
   },
   {
     displayName: 'Limit',
@@ -19,7 +20,7 @@ const properties: INodeProperties[] = [
     typeOptions: { minValue: 1 },
     default: 50,
     displayOptions: { show: { returnAll: [false] } },
-    description: 'Max number of results to return',
+    description: 'Max number of results to return from the first Meta page',
   },
   {
     displayName: 'Filters',
@@ -27,7 +28,7 @@ const properties: INodeProperties[] = [
     type: 'collection',
     placeholder: 'Add Filter',
     default: {},
-    description: 'Applied by the node to the templates Evolution returns',
+    description: 'Applied by the node only to the first Meta page returned by Evolution API',
     options: [
       {
         displayName: 'Category',

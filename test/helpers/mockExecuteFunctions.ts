@@ -24,11 +24,11 @@ import type {
   ILoadOptionsFunctions,
   INode,
   INodeExecutionData,
-  INodeProperties,
-  INodeType,
+  INodeTypeDescription,
+  INodeParameters,
   JsonObject,
 } from 'n8n-workflow';
-import { NodeApiError } from 'n8n-workflow';
+import { NodeApiError, NodeHelpers } from 'n8n-workflow';
 
 import { CREDENTIAL_TYPE } from '../../nodes/EvolutionApi/GenericFunctions';
 
@@ -132,6 +132,9 @@ export interface MockOptions {
   params?: IDataObject;
   /** Per-item parameter overrides: itemParams[i] wins over params for item i. */
   itemParams?: IDataObject[];
+  /** Raw expressions before evaluation, for getNodeParameter(..., { rawExpressions: true }). */
+  rawParams?: IDataObject;
+  rawItemParams?: IDataObject[];
   /** Input items. Defaults to one empty item. */
   items?: INodeExecutionData[];
   /** Credential data. Merged over { baseUrl, apiKey, defaultInstance: '' }. */
@@ -198,31 +201,24 @@ export class MockHttp {
   }
 }
 
-let nodeProperties: INodeProperties[] | undefined;
+let nodeDescription: INodeTypeDescription | undefined;
 
-/** Default of a top-level parameter visible for resource + operation, from the node description. */
-export function getDescriptionDefault(
-  name: string,
-  resource: unknown,
-  operation: unknown,
-): unknown {
-  if (name.includes('.')) return undefined;
-  if (!nodeProperties) {
+/** Use n8n's own display rules, defaults and nested collection normalization. */
+export function normalizeNodeParameters(params: IDataObject): IDataObject {
+  if (!nodeDescription) {
     // Loaded lazily to keep this helper importable from any test.
     // eslint-disable-next-line @typescript-eslint/no-var-requires
     const { EvolutionApi } = require('../../nodes/EvolutionApi/EvolutionApi.node');
-    nodeProperties = (new EvolutionApi() as INodeType).description.properties;
+    nodeDescription = new EvolutionApi().description as INodeTypeDescription;
   }
-  const property = nodeProperties.find((candidate) => {
-    if (candidate.name !== name) return false;
-    const show = candidate.displayOptions?.show ?? {};
-    const resources = show.resource as unknown[] | undefined;
-    const operations = show.operation as unknown[] | undefined;
-    if (resources && !resources.includes(resource)) return false;
-    if (operations && !operations.includes(operation)) return false;
-    return true;
-  });
-  return property?.default;
+  return (NodeHelpers.getNodeParameters(
+    nodeDescription.properties,
+    params as INodeParameters,
+    true,
+    false,
+    { typeVersion: 1 },
+    nodeDescription,
+  ) ?? {}) as IDataObject;
 }
 
 function getPath(source: IDataObject, name: string): unknown {
@@ -302,21 +298,31 @@ export function createMockExecuteFunctions(options: MockOptions = {}): MockExecu
     return binary;
   };
 
+  const normalizedItems = new Map<number, IDataObject>();
+  const getParameters = (itemIndex: number): IDataObject => {
+    let normalized = normalizedItems.get(itemIndex);
+    if (!normalized) {
+      const supplied = { ...params, ...(options.itemParams?.[itemIndex] ?? {}) };
+      // Generic helper and trigger contexts do not have an action-node resource selector.
+      normalized = options.useDescriptionDefaults !== false && supplied.resource !== undefined
+        ? normalizeNodeParameters(supplied)
+        : supplied;
+      normalizedItems.set(itemIndex, normalized);
+    }
+    return normalized;
+  };
+
   /** Parameter lookup shared by getNodeParameter (execute) and getCurrentNodeParameter (UI). */
   const readParameter = (
     name: string,
     itemIndex: number,
-    parameterOptions?: { extractValue?: boolean },
+    parameterOptions?: { extractValue?: boolean; rawExpressions?: boolean },
   ): unknown => {
-    const perItem = options.itemParams?.[itemIndex] ?? {};
-    let value = getPath(perItem, name);
-    if (value === undefined) value = getPath(params, name);
-    if (value === undefined && options.useDescriptionDefaults !== false) {
-      value = getDescriptionDefault(
-        name,
-        getPath(perItem, 'resource') ?? params.resource,
-        getPath(perItem, 'operation') ?? params.operation,
-      );
+    let value = getPath(getParameters(itemIndex), name);
+    if (parameterOptions?.rawExpressions) {
+      const raw = getPath(options.rawItemParams?.[itemIndex] ?? {}, name)
+        ?? getPath(options.rawParams ?? {}, name);
+      if (raw !== undefined) value = raw;
     }
     if (
       parameterOptions?.extractValue &&
@@ -350,7 +356,7 @@ export function createMockExecuteFunctions(options: MockOptions = {}): MockExecu
         name: string,
         itemIndex: number,
         fallbackValue?: unknown,
-        parameterOptions?: { extractValue?: boolean },
+        parameterOptions?: { extractValue?: boolean; rawExpressions?: boolean },
       ) => {
         const value = readParameter(name, itemIndex, parameterOptions);
         if (value === undefined) {
@@ -365,7 +371,7 @@ export function createMockExecuteFunctions(options: MockOptions = {}): MockExecu
       (name: string, parameterOptions?: { extractValue?: boolean }) =>
         readParameter(name, 0, parameterOptions),
     ),
-    getCurrentNodeParameters: jest.fn(() => ({ ...params, ...(options.itemParams?.[0] ?? {}) })),
+    getCurrentNodeParameters: jest.fn(() => getParameters(0)),
     helpers: {
       httpRequestWithAuthentication,
       httpRequest: jest.fn(async () => {

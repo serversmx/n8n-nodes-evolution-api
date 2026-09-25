@@ -1,5 +1,5 @@
 import type { IDataObject, IExecuteFunctions, INodeProperties } from 'n8n-workflow';
-import { updateDisplayOptions } from 'n8n-workflow';
+import { NodeOperationError, updateDisplayOptions } from 'n8n-workflow';
 
 import {
   encodePathSegment,
@@ -29,11 +29,15 @@ export const description = updateDisplayOptions(
 export async function execute(this: IExecuteFunctions, itemIndex: number): Promise<IDataObject> {
   const instance = await resolveInstanceName.call(this, itemIndex);
   const credsId = String(this.getNodeParameter('openaiCredsId', itemIndex, '')).trim();
+  if (!credsId) {
+    throw new NodeOperationError(this.getNode(), 'OpenAI Credential ID is required', { itemIndex });
+  }
+  const path = `/openai/creds/${encodePathSegment(credsId, 'OpenAI Credential ID')}/${instance}`;
   try {
     return (await evolutionApiRequest.call(
       this,
       'DELETE',
-      `/openai/creds/${encodePathSegment(credsId, 'OpenAI Credential ID')}/${instance}`,
+      path,
       {},
       {},
       { itemIndex },

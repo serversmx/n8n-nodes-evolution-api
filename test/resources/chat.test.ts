@@ -3,7 +3,10 @@ import type { IDataObject, INodeExecutionData } from 'n8n-workflow';
 import { EvolutionApi } from '../../nodes/EvolutionApi/EvolutionApi.node';
 import { resetRetryPolicy, setRetryPolicy } from '../../nodes/EvolutionApi/GenericFunctions';
 import { execute, operations } from '../../nodes/EvolutionApi/resources/chat';
-import { mediaFileName } from '../../nodes/EvolutionApi/resources/chat/downloadMedia.operation';
+import {
+  description as downloadMediaDescription,
+  mediaFileName,
+} from '../../nodes/EvolutionApi/resources/chat/downloadMedia.operation';
 import { withPushNameFallback } from '../../nodes/EvolutionApi/resources/chat/getMany.operation';
 import {
   collectPages,
@@ -501,6 +504,12 @@ describe('chat > editMessage', () => {
 });
 
 describe('chat > downloadMedia', () => {
+  it('does not require a redundant Message ID when Full Message supplies key.id', () => {
+    expect(downloadMediaDescription.find((field) => field.name === 'messageId')?.required).not.toBe(
+      true,
+    );
+  });
+
   const FILE = Buffer.from('%PDF-1.4 test');
   const MEDIA_RESPONSE = {
     mediaType: 'documentMessage',

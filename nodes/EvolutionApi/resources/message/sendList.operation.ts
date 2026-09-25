@@ -134,7 +134,8 @@ const properties: INodeProperties[] = [
     name: 'listSectionsJson',
     type: 'json',
     required: true,
-    default: SECTIONS_EXAMPLE,
+    default: '',
+    placeholder: SECTIONS_EXAMPLE,
     description:
       'Array of sections: [{ "title", "rows": [{ "title", "description"?, "rowId" }] }]. An object with a "sections" key is accepted too.',
     displayOptions: { show: { interactiveInputMode: ['json'] } },

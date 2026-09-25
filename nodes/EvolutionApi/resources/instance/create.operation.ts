@@ -6,14 +6,15 @@ import type {
 } from 'n8n-workflow';
 import { NodeOperationError, updateDisplayOptions } from 'n8n-workflow';
 
-import { EVOLUTION_EVENT_OPTIONS, INTEGRATION_OPTIONS, REQUIRES_24 } from '../../constants';
+import { INTEGRATION_OPTIONS, REQUIRES_24 } from '../../constants';
 import {
   evolutionApiRequest,
   isPlainObject,
   normalizeNumber,
   parseJsonParameter,
 } from '../../GenericFunctions';
-import { qrCodeBinaryOptions, withQrCodeBinary } from './helpers';
+import { WEBHOOK_EVENT_OPTIONS } from '../webhook/helpers';
+import { qrCodeBinaryOptions, redactCreatedInstanceSecrets, withQrCodeBinary } from './helpers';
 
 const properties: INodeProperties[] = [
   {
@@ -85,7 +86,7 @@ const properties: INodeProperties[] = [
         typeOptions: { password: true },
         default: '',
         description:
-          'API key for this instance. Leave empty to let Evolution generate one (returned as "hash").',
+          'API key for this instance. Leave empty to let Evolution generate one (returned as "hash" when Options > Include Secrets is on).',
       },
       {
         displayName: 'Phone Number',
@@ -161,7 +162,8 @@ const properties: INodeProperties[] = [
         type: 'string',
         typeOptions: { password: true },
         default: '',
-        description: 'Token of the Wavoip voice-call integration',
+        description:
+          'Unsupported during creation on Evolution API 2.3.7 and 2.4.0-rc2: the WhatsApp socket does not exist yet. Leave empty, then use Settings > Set after connecting a WhatsApp Baileys instance.',
       },
     ],
   },
@@ -177,7 +179,7 @@ const properties: INodeProperties[] = [
         displayName: 'Events',
         name: 'events',
         type: 'multiOptions',
-        options: EVOLUTION_EVENT_OPTIONS,
+        options: WEBHOOK_EVENT_OPTIONS,
         default: [],
         description: `Events to send. Leave empty to receive all events. "Messaging History Set": ${REQUIRES_24}`,
       },
@@ -381,7 +383,17 @@ const properties: INodeProperties[] = [
     type: 'collection',
     placeholder: 'Add Option',
     default: {},
-    options: [...qrCodeBinaryOptions],
+    options: [
+      ...qrCodeBinaryOptions,
+      {
+        displayName: 'Include Secrets',
+        name: 'includeSecrets',
+        type: 'boolean' as const,
+        default: false,
+        description:
+          'Whether to return the instance token (hash), Cloud API verify token, Chatwoot and Wavoip tokens, and secret webhook headers. Enable only when needed to retrieve generated credentials; these values are stored in execution logs.',
+      },
+    ].sort((a, b) => a.displayName.localeCompare(b.displayName)),
   },
 ];
 
@@ -398,7 +410,6 @@ const SETTINGS_KEYS = [
   'readMessages',
   'readStatus',
   'syncFullHistory',
-  'wavoipToken',
 ];
 
 /** Build the body of POST /instance/create (InstanceDto + instanceSchema, 2.3.7 and 2.4). */
@@ -444,6 +455,13 @@ export function buildCreateBody(this: IExecuteFunctions, itemIndex: number): IDa
 
   // Settings: flat keys; anything not sent is stored as false/''.
   const settings = this.getNodeParameter('instanceSettings', itemIndex, {}) as IDataObject;
+  if (String(settings.wavoipToken ?? '').trim()) {
+    throw new NodeOperationError(node, 'Wavoip Token cannot be set during instance creation', {
+      itemIndex,
+      description:
+        'Evolution API 2.3.7 and 2.4.0-rc2 access a WhatsApp socket before it exists and roll back creation. Leave Wavoip Token empty, connect the WhatsApp Baileys instance, then use Settings > Set.',
+    });
+  }
   for (const key of SETTINGS_KEYS) {
     if (settings[key] !== undefined && settings[key] !== '') body[key] = settings[key];
   }
@@ -555,5 +573,6 @@ export async function execute(
     },
   )) as IDataObject;
 
-  return await withQrCodeBinary.call(this, response, options);
+  const output = options.includeSecrets === true ? response : redactCreatedInstanceSecrets(response);
+  return await withQrCodeBinary.call(this, output, options);
 }

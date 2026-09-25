@@ -1,5 +1,5 @@
 import type { IDataObject, IExecuteFunctions, INodeProperties } from 'n8n-workflow';
-import { NodeOperationError, updateDisplayOptions } from 'n8n-workflow';
+import { NodeApiError, NodeOperationError, updateDisplayOptions } from 'n8n-workflow';
 
 import { evolutionApiRequest, resolveInstanceName } from '../../GenericFunctions';
 import {
@@ -79,7 +79,7 @@ const properties: INodeProperties[] = [
         typeOptions: { password: true },
         default: '',
         description:
-          'Token of the Wavoip voice-call integration. While a token is stored, Evolution reconnects the WhatsApp socket on every settings update.',
+          'WhatsApp Baileys only; connect the instance before setting this token. While a token is stored, Evolution reconnects the socket on every settings update. Add this field with an empty value to clear it if updates fail on an unconnected or non-Baileys instance.',
       },
     ],
   },
@@ -144,14 +144,24 @@ export async function execute(this: IExecuteFunctions, itemIndex: number): Promi
     { itemIndex },
   )) as IDataObject;
 
-  const response = (await evolutionApiRequest.call(
-    this,
-    'POST',
-    `/settings/set/${instance}`,
-    buildSettingsBody(current, changes),
-    {},
-    { itemIndex },
-  )) as IDataObject;
+  const body = buildSettingsBody(current, changes);
+  let response: IDataObject;
+  try {
+    response = (await evolutionApiRequest.call(
+      this,
+      'POST',
+      `/settings/set/${instance}`,
+      body,
+      {},
+      { itemIndex },
+    )) as IDataObject;
+  } catch (error) {
+    if (error instanceof NodeApiError && error.httpCode === '500' && body.wavoipToken) {
+      error.description =
+        `Wavoip requires a connected WhatsApp Baileys socket. Evolution may already have saved these settings before failing. Add Wavoip Token with an empty value to clear it, or connect the Baileys instance before retrying. ${error.description ?? ''}`.trim();
+    }
+    throw error;
+  }
 
   return options.includeSecrets === true ? response : redactSettingsSecrets(response);
 }

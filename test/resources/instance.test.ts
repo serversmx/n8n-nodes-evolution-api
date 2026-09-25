@@ -1,9 +1,11 @@
-import type { IDataObject, INodeExecutionData } from 'n8n-workflow';
+import type { IDataObject, INodeExecutionData, INodeProperties, INodePropertyOptions } from 'n8n-workflow';
 
 import { resetRetryPolicy, setRetryPolicy } from '../../nodes/EvolutionApi/GenericFunctions';
 import { EvolutionApi } from '../../nodes/EvolutionApi/EvolutionApi.node';
 import { execute as instanceExecute } from '../../nodes/EvolutionApi/resources/instance';
+import { description as createDescription } from '../../nodes/EvolutionApi/resources/instance/create.operation';
 import { redactInstanceSecrets } from '../../nodes/EvolutionApi/resources/instance/getMany.operation';
+import { redactCreatedInstanceSecrets } from '../../nodes/EvolutionApi/resources/instance/helpers';
 import { createMockExecuteFunctions, rl } from '../helpers/mockExecuteFunctions';
 
 const QR_DATA_URI = `data:image/png;base64,${Buffer.from('qr-png').toString('base64')}`;
@@ -111,7 +113,7 @@ describe('instance > create', () => {
       token: 'secret-token',
       number: '5511999999999',
     });
-    expect(result.hash).toBe('secret-token');
+    expect(result.hash).toBeUndefined();
   });
 
   it('requires the Meta token and phone number ID for WhatsApp Cloud API', async () => {
@@ -172,7 +174,7 @@ describe('instance > create', () => {
           rejectCall: true,
           msgCall: 'No calls',
           groupsIgnore: false,
-          wavoipToken: '',
+          wavoipToken: '   ',
         },
         webhookConfig: {
           url: 'https://n8n.test/webhook/evo',
@@ -300,7 +302,91 @@ describe('instance > create', () => {
     ctx.http.reply('POST', '/instance/create', { hash: 'h', qrcode: { base64: QR_DATA_URI } }, 201);
     const result = (await instanceExecute.create.call(ctx, 0)) as INodeExecutionData[];
     expect(result[0].binary?.data?.mimeType).toBe('image/png');
-    expect(result[0].json.hash).toBe('h');
+    expect(result[0].json.hash).toBeUndefined();
+  });
+
+  it.each(['WHATSAPP-BAILEYS', 'WHATSAPP-BUSINESS', 'EVOLUTION'])(
+    'rejects Wavoip before creating a %s instance with no socket',
+    async (integration) => {
+      const ctx = createMockExecuteFunctions({
+        params: {
+          resource: 'instance', operation: 'create', newInstanceName: 'new', integration,
+          businessToken: 'meta-token', phoneNumberId: '123',
+          instanceSettings: { wavoipToken: 'voice-secret' },
+        },
+      });
+      await expect(new EvolutionApi().execute.call(ctx)).rejects.toMatchObject({
+        message: 'Wavoip Token cannot be set during instance creation',
+        description: expect.stringContaining('Settings > Set'),
+      });
+      expect(ctx.http.calls).toEqual([]);
+    },
+  );
+
+  const secretResponse = {
+    hash: 'instance-secret',
+    instance: { instanceName: 'new', accessTokenWaBusiness: 'verify-secret' },
+    chatwoot: { token: 'chatwoot-secret', url: 'https://cw.test' },
+    settings: { wavoipToken: 'voice-secret', alwaysOnline: true },
+    webhook: {
+      webhookUrl: 'https://hook.test',
+      webhookHeaders: {
+        jwt_key: 'jwt-secret', Authorization: 'Bearer secret', Cookie: 'session=secret',
+        'x-api-key': 'api-secret', 'x-tenant': 'sales',
+      },
+    },
+    qrcode: { base64: QR_DATA_URI },
+  };
+
+  it.each([false, true])('redacts every create secret with QR binary %s', async (qrCodeAsBinary) => {
+    const ctx = createMockExecuteFunctions({
+      params: {
+        resource: 'instance', operation: 'create', newInstanceName: 'new',
+        options: { qrCodeAsBinary },
+      },
+    });
+    ctx.http.reply('POST', '/instance/create', secretResponse, 201);
+    const [output] = await new EvolutionApi().execute.call(ctx);
+    expect(output[0].json).toEqual({
+      instance: { instanceName: 'new' },
+      chatwoot: { url: 'https://cw.test' },
+      settings: { alwaysOnline: true },
+      webhook: { webhookUrl: 'https://hook.test', webhookHeaders: { 'x-tenant': 'sales' } },
+      qrcode: { base64: QR_DATA_URI },
+    });
+    expect(Boolean(output[0].binary)).toBe(qrCodeAsBinary);
+    expect(secretResponse.hash).toBe('instance-secret');
+    expect(secretResponse.webhook.webhookHeaders.jwt_key).toBe('jwt-secret');
+  });
+
+  it.each([false, true])('includes create secrets only on opt-in with QR binary %s', async (qrCodeAsBinary) => {
+    const ctx = createMockExecuteFunctions({
+      params: {
+        resource: 'instance', operation: 'create', newInstanceName: 'new',
+        options: { qrCodeAsBinary, includeSecrets: true },
+      },
+    });
+    ctx.http.reply('POST', '/instance/create', secretResponse, 201);
+    const [output] = await new EvolutionApi().execute.call(ctx);
+    expect(output[0].json).toEqual(secretResponse);
+    expect(Boolean(output[0].binary)).toBe(qrCodeAsBinary);
+  });
+
+  it('keeps unknown non-secret create fields without mutating the response', () => {
+    const response = { hash: 'secret', token: 'secret', newField: true };
+    expect(redactCreatedInstanceSecrets(response)).toEqual({ newField: true });
+    expect(response.hash).toBe('secret');
+  });
+
+  it('annotates never-delivered webhook events and history completion during creation', () => {
+    const webhook = createDescription.find((p) => p.name === 'webhookConfig');
+    const events = (webhook?.options as INodeProperties[]).find((p) => p.name === 'events');
+    const options = events?.options as INodePropertyOptions[];
+    for (const value of ['APPLICATION_STARTUP', 'CONTACTS_SET', 'GROUP_UPDATE']) {
+      expect(options.find((o) => o.value === value)?.description).toContain('never');
+    }
+    expect(options.find((o) => o.value === 'MESSAGING_HISTORY_SET')?.description)
+      .toContain('History sync finished');
   });
 });
 
@@ -419,7 +505,7 @@ describe('instance > getMany', () => {
     });
   });
 
-  it('keeps 401 (instance token without a match) as an error', async () => {
+  it('explains filtered 401 without hiding a genuinely invalid credential', async () => {
     const ctx = createMockExecuteFunctions({
       params: { returnAll: true, filters: { instanceName: 'other' } },
     });
@@ -429,7 +515,19 @@ describe('instance > getMany', () => {
       { status: 401, error: 'Unauthorized', response: { message: 'Unauthorized' } },
       401,
     );
-    await expect(instanceExecute.getMany.call(ctx, 0)).rejects.toMatchObject({ httpCode: '401' });
+    await expect(instanceExecute.getMany.call(ctx, 0)).rejects.toMatchObject({
+      httpCode: '401',
+      message: expect.stringContaining('filter matched nothing'),
+      description: expect.stringContaining('Remove the filters to check the credential'),
+    });
+  });
+
+  it('keeps the authentication hint for 401 without filters', async () => {
+    const ctx = createMockExecuteFunctions({ params: { returnAll: true } });
+    ctx.http.reply('GET', '/instance/fetchInstances', { status: 401, message: 'Unauthorized' }, 401);
+    await expect(instanceExecute.getMany.call(ctx, 0)).rejects.toMatchObject({
+      httpCode: '401', message: expect.not.stringContaining('filter matched nothing'),
+    });
   });
 
   it('redactInstanceSecrets does not mutate the input', () => {

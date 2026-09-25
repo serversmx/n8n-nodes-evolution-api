@@ -230,7 +230,11 @@ describe('message route contract (whole node, 2 items each)', () => {
     ],
     [
       'sendCarousel',
-      { number, carouselBody: 'B', carouselCards: { card: [{ body: 'C', buttons: [reply] }] } },
+      {
+        number,
+        carouselBody: 'B',
+        carouselCards: { card: [{ body: 'C', buttons: { button: [reply] } }] },
+      },
       'POST',
       '/message/sendCarousel/main',
     ],
@@ -1146,6 +1150,30 @@ describe('message > sendContact', () => {
 });
 
 describe('message > sendReaction', () => {
+  it.each([
+    ['+52 1 55 1234 5678', '525512345678@s.whatsapp.net'],
+    ['+54 9 11 1234 5678', '541112345678@s.whatsapp.net'],
+    ['+55 31 98765 4321', '553187654321@s.whatsapp.net'],
+    ['+55 11 98765 4321', '5511987654321@s.whatsapp.net'],
+    ['5215512345678@s.whatsapp.net', '5215512345678@s.whatsapp.net'],
+    ['123456789012345@lid', '123456789012345@lid'],
+    ['120363025246125888@g.us', '120363025246125888@g.us'],
+  ])(
+    'uses Evolution digit rules for plain numbers while preserving JIDs: %s',
+    async (input, jid) => {
+      const ctx = messageContext('sendReaction', {
+        remoteJid: input,
+        messageId: 'ID',
+        options: { participant: input },
+      });
+      ctx.http.reply('POST', '/message/sendReaction/main', SENT, 201);
+
+      await execute.sendReaction.call(ctx, 0);
+
+      expect(ctx.http.calls[0].body).toMatchObject({ key: { remoteJid: jid, participant: jid } });
+    },
+  );
+
   it('sends the message key and the emoji (no number field)', async () => {
     const ctx = messageContext('sendReaction', {
       remoteJid: '120363025246125888@g.us',
@@ -1363,6 +1391,44 @@ describe('message > sendList', () => {
   });
 });
 
+describe('required interactive JSON inputs', () => {
+  const cases: Array<[string, string, IDataObject, string]> = [
+    ['sendButtons', 'buttonsJson', { buttonsTitle: 'Confirm' }, 'At least one button is required'],
+    [
+      'sendList',
+      'listSectionsJson',
+      { listTitle: 'Menu', listFooter: 'Pick one', listButtonText: 'Open' },
+      'Add at least one section with at least one row',
+    ],
+    [
+      'sendCarousel',
+      'carouselCardsJson',
+      { carouselBody: 'Products' },
+      'A carousel needs between 1 and 10 cards (got 0)',
+    ],
+  ];
+
+  it.each(cases)(
+    '%s keeps samples in placeholders and rejects unset or empty JSON',
+    async (operation, parameter, params, error) => {
+      const field = fields.find((candidate) => candidate.name === parameter);
+      expect(field?.default).toBe('');
+      expect(field?.placeholder).toContain('[');
+
+      for (const input of [undefined, '', '   ', '[]', []]) {
+        const ctx = messageContext(operation, {
+          number: '5511999999999',
+          ...params,
+          interactiveInputMode: 'json',
+          ...(input === undefined ? {} : { [parameter]: input }),
+        });
+        await expect(execute[operation].call(ctx, 0)).rejects.toThrow(error);
+        expect(ctx.http.calls).toHaveLength(0);
+      }
+    },
+  );
+});
+
 describe('message > sendButtons', () => {
   it('sends reply buttons (ID defaults to the display text)', async () => {
     const ctx = messageContext('sendButtons', {
@@ -1446,10 +1512,6 @@ describe('message > sendButtons', () => {
       [reply(1), { type: 'reply', displayText: 'Other', id: 'R1' }],
       'Quick Reply button IDs must be different ("R1" is repeated)',
     ],
-    [
-      [url(1), url(2), { type: 'copy', displayText: 'C', copyCode: 'X' }],
-      'at most 2 call-to-action',
-    ],
     [[reply(1), reply(2), reply(3), reply(4)], 'at most 3 Quick Reply buttons'],
     [[reply(1), url(1)], 'Quick Reply buttons cannot be mixed with other button types'],
     [[pixButton, url(1)], 'A PIX Payment button must be the only button of the message'],
@@ -1471,10 +1533,48 @@ describe('message > sendButtons', () => {
     expect(ctx.http.calls).toHaveLength(0);
   });
 
+  it('allows Evolution 2.3.7 to accept more than 2 CTA buttons', async () => {
+    const buttons = [url(1), url(2), { type: 'copy', displayText: 'C', copyCode: 'X' }];
+    const ctx = messageContext('sendButtons', {
+      number: '5511999999999',
+      buttonsTitle: 'Contact us',
+      buttons: { button: buttons },
+    });
+    ctx.http.reply('POST', '/message/sendButtons/main', SENT, 201);
+
+    await execute.sendButtons.call(ctx, 0);
+
+    expect(ctx.http.calls[0].body).toMatchObject({ buttons });
+  });
+
+  it('reports the server-specific CTA limit from Evolution 2.4+', async () => {
+    const ctx = messageContext('sendButtons', {
+      number: '5511999999999',
+      buttonsTitle: 'Contact us',
+      buttons: { button: [url(1), url(2), url(3)] },
+    });
+    ctx.http.reply(
+      'POST',
+      '/message/sendButtons/main',
+      {
+        status: 400,
+        error: 'Bad Request',
+        response: { message: ['Maximum of 2 CTA buttons allowed'] },
+      },
+      400,
+    );
+
+    await expect(execute.sendButtons.call(ctx, 0)).rejects.toMatchObject({
+      httpCode: '400',
+      message: expect.stringContaining('Maximum of 2 CTA buttons allowed'),
+    });
+    expect(ctx.http.calls).toHaveLength(1);
+  });
+
   it('explains the allowed combinations in the error description', () => {
-    expect(() => assertButtonRules(TEST_NODE, 0, [url(1), url(2), url(3)])).toThrow(
+    expect(() => assertButtonRules(TEST_NODE, 0, [reply(1), url(1)])).toThrow(
       expect.objectContaining({
-        description: expect.stringContaining('Evolution API 2.4+ rejects more'),
+        description: expect.stringContaining('at most 2 on Evolution API 2.4+'),
       }),
     );
   });
@@ -1517,8 +1617,7 @@ describe('message > sendCarousel (2.4+)', () => {
       body: 'Our products',
       cards: [
         {
-          body: 'Large',
-          title: 'Pizza',
+          body: '*Pizza*\n\nLarge',
           imageUrl: 'https://example.com/p.jpg',
           buttons: [
             { type: 'reply', displayText: 'Order', id: 'order_pizza' },
@@ -1547,9 +1646,39 @@ describe('message > sendCarousel (2.4+)', () => {
     ctx.http.reply('POST', '/message/sendCarousel/main', SENT, 201);
     await execute.sendCarousel.call(ctx, 0);
     expect((ctx.http.calls[0].body as IDataObject).cards).toEqual([
-      { body: 'C1', buttons: [{ type: 'url', displayText: 'Go', url: 'https://e.com' }] },
+      { body: 'B\n\nC1', buttons: [{ type: 'url', displayText: 'Go', url: 'https://e.com' }] },
     ]);
   });
+
+  it.each(['fields', 'json'])(
+    'preserves title and outer body for a single card without an image (%s)',
+    async (mode) => {
+      const card = {
+        title: 'Pizza',
+        body: 'Large',
+        buttons: [{ type: 'reply', displayText: 'Order' }],
+      };
+      const ctx = messageContext('sendCarousel', {
+        number: '5511999999999',
+        carouselBody: 'Our products',
+        interactiveInputMode: mode,
+        ...(mode === 'json'
+          ? { carouselCardsJson: JSON.stringify([card]) }
+          : { carouselCards: { card: [{ ...card, buttons: { button: card.buttons } }] } }),
+      });
+      ctx.http.reply('POST', '/message/sendCarousel/main', SENT, 201);
+
+      await execute.sendCarousel.call(ctx, 0);
+
+      expect(ctx.http.calls[0].body).toMatchObject({
+        body: 'Our products',
+        cards: [{ body: 'Our products\n\n*Pizza*\n\nLarge' }],
+      });
+      expect(
+        ((ctx.http.calls[0].body as IDataObject).cards as IDataObject[])[0],
+      ).not.toHaveProperty('title');
+    },
+  );
 
   const card = (buttons: IDataObject[], body = 'X') => ({ body, buttons });
   const button = { type: 'reply', displayText: 'R' };
@@ -1606,6 +1735,27 @@ describe('message > sendCarousel (2.4+)', () => {
 });
 
 describe('message > sendStatus', () => {
+  it('normalizes MX, AR and BR recipients, deduplicates the results, and preserves full JIDs', async () => {
+    const ctx = messageContext('sendStatus', {
+      text: 'Hello',
+      statusRecipients:
+        '+52 1 55 1234 5678, 525512345678, +54 9 11 1234 5678, +55 31 98765 4321, 5215512345678@s.whatsapp.net, 123456789012345@lid',
+    });
+    ctx.http.reply('POST', '/message/sendStatus/main', SENT, 201);
+
+    await execute.sendStatus.call(ctx, 0);
+
+    expect(ctx.http.calls[0].body).toMatchObject({
+      statusJidList: [
+        '525512345678@s.whatsapp.net',
+        '541112345678@s.whatsapp.net',
+        '553187654321@s.whatsapp.net',
+        '5215512345678@s.whatsapp.net',
+        '123456789012345@lid',
+      ],
+    });
+  });
+
   it('posts a text status to full JIDs', async () => {
     const ctx = messageContext('sendStatus', {
       statusType: 'text',

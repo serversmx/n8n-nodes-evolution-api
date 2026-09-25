@@ -198,7 +198,7 @@ export function parseJsonParameter(value: unknown, fieldName: string): unknown {
     valid = false;
   }
   // Thrown outside the catch block (n8n community lint: require-node-api-error).
-  if (!valid) throw new Error(`Invalid JSON in "${fieldName}": ${value.substring(0, 100)}`);
+  if (!valid) throw new Error(`Invalid JSON in "${fieldName}": check the JSON syntax`);
   return parsed;
 }
 
@@ -673,9 +673,16 @@ export function encodePathSegment(value: unknown, label = 'ID'): string {
 export async function resolveInstanceNameFromValue(
   this: EvolutionContext,
   value: unknown,
-  options: { itemIndex?: number; encode?: boolean } = {},
+  options: { itemIndex?: number; encode?: boolean; allowDefault?: boolean } = {},
 ): Promise<string> {
   let name = extractResourceLocatorValue(value);
+
+  if (!name && options.allowDefault === false) {
+    throw new NodeOperationError(this.getNode(), 'Instance Name is required for this operation', {
+      itemIndex: options.itemIndex,
+      description: 'Select an explicit instance. This operation does not use the credential default.',
+    });
+  }
 
   if (!name) {
     const credentials = await this.getCredentials(CREDENTIAL_TYPE);
@@ -707,13 +714,24 @@ export async function resolveInstanceNameFromValue(
 export async function resolveInstanceName(
   this: IExecuteFunctions,
   itemIndex: number,
-  options: { parameterName?: string; encode?: boolean } = {},
+  options: { parameterName?: string; encode?: boolean; allowDefault?: boolean } = {},
 ): Promise<string> {
   const parameterName = options.parameterName ?? 'instanceName';
   const value = this.getNodeParameter(parameterName, itemIndex, '', { extractValue: true });
+  if (!extractResourceLocatorValue(value)) {
+    const raw = this.getNodeParameter(parameterName, itemIndex, '', { rawExpressions: true });
+    // A locator can contain an expression in `value`, or the entire parameter can be one.
+    if (extractResourceLocatorValue(raw).startsWith('=')) {
+      throw new NodeOperationError(this.getNode(), 'Instance Name expression resolved to an empty value', {
+        itemIndex,
+        description: `Provide an instance for item ${itemIndex + 1}. Empty expressions do not use the credential default.`,
+      });
+    }
+  }
   return await resolveInstanceNameFromValue.call(this, value, {
     itemIndex,
     encode: options.encode,
+    allowDefault: options.allowDefault,
   });
 }
 

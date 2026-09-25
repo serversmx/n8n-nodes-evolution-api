@@ -11,7 +11,7 @@ export const description: INodeProperties[] = [];
  * 2.4+ answers 200 with message 'Instance was already disconnected'.
  */
 export async function execute(this: IExecuteFunctions, itemIndex: number): Promise<IDataObject> {
-  const instance = await resolveInstanceName.call(this, itemIndex);
+  const instance = await resolveInstanceName.call(this, itemIndex, { allowDefault: false });
   return (await evolutionApiRequest.call(
     this,
     'DELETE',

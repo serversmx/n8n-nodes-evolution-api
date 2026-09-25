@@ -146,6 +146,19 @@ describe('small utilities', () => {
     expect(toArray([{ a: 1 }, 'x'])).toEqual([{ a: 1 }, { value: 'x' }]);
   });
 
+  it('never copies secret-bearing invalid JSON into parse errors', () => {
+    const secret = 'Bearer never-expose-this-token';
+    const malformed = `{"authorization":"${secret}",}`;
+    expect(() => parseJsonParameter(malformed, 'Headers (JSON)'))
+      .toThrow('Invalid JSON in "Headers (JSON)": check the JSON syntax');
+    try {
+      parseJsonParameter(malformed, 'Headers (JSON)');
+    } catch (error) {
+      expect(String(error)).not.toContain(secret);
+      expect(String(error)).not.toContain('authorization');
+    }
+  });
+
   it('parseJsonParameter parses strings and passes objects through', () => {
     expect(parseJsonParameter('{"a":1}', 'X')).toEqual({ a: 1 });
     expect(parseJsonParameter({ a: 1 }, 'X')).toEqual({ a: 1 });
@@ -644,6 +657,29 @@ describe('evolutionApiRequest', () => {
 });
 
 describe('resolveInstanceName', () => {
+  it.each(['={{ $json.instanceName }}', rl('={{ $json.instanceName }}')])(
+    'rejects an empty evaluated expression instead of using the credential default (%j)',
+    async (raw) => {
+      const ctx = createMockExecuteFunctions({
+        params: { instanceName: rl('') },
+        rawParams: { instanceName: raw },
+        credentials: { defaultInstance: 'production' },
+      });
+      await expect(resolveInstanceName.call(ctx, 0)).rejects.toMatchObject({
+        message: 'Instance Name expression resolved to an empty value',
+        context: expect.objectContaining({ itemIndex: 0 }),
+      });
+    },
+  );
+
+  it('allows callers without an execution item to prohibit default-instance fallback', async () => {
+    const ctx = createMockLoadOptionsFunctions({ credentials: { defaultInstance: 'production' } });
+    await expect(resolveInstanceNameFromValue.call(ctx, '', { allowDefault: false }))
+      .rejects.toThrow('Instance Name is required for this operation');
+    await expect(resolveInstanceNameFromValue.call(ctx, 'explicit', { allowDefault: false }))
+      .resolves.toBe('explicit');
+  });
+
   it('uses the node parameter (string or resourceLocator) and URL-encodes it', async () => {
     const ctx = createMockExecuteFunctions({
       itemParams: [{ instanceName: 'plain name' }, { instanceName: rl('ventas/mx', 'list') }],

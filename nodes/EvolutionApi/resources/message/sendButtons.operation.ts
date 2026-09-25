@@ -28,7 +28,7 @@ const BUTTONS_EXAMPLE = `[
 ]`;
 
 const RULES =
-  'Use 1-3 Quick Reply buttons, or 1-2 URL/Call/Copy Code buttons, or a single PIX Payment button; types cannot be mixed.';
+  'Use 1-3 Quick Reply buttons, any combination of URL/Call/Copy Code buttons, or a single PIX Payment button. Evolution API 2.4+ limits URL/Call/Copy Code buttons to 2; 2.3.x has no server limit.';
 
 const properties: INodeProperties[] = [
   numberProperty,
@@ -73,7 +73,8 @@ const properties: INodeProperties[] = [
     name: 'buttonsJson',
     type: 'json',
     required: true,
-    default: BUTTONS_EXAMPLE,
+    default: '',
+    placeholder: BUTTONS_EXAMPLE,
     description: `Array of buttons: { "type": "reply", "displayText", "id" }, { "type": "url", "displayText", "url" }, { "type": "call", "displayText", "phoneNumber" }, { "type": "copy", "displayText", "copyCode" } or { "type": "pix", "currency", "name", "keyType", "key" }. ${RULES}`,
     displayOptions: { show: { interactiveInputMode: ['json'] } },
   },

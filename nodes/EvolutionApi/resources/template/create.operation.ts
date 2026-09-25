@@ -36,7 +36,8 @@ const properties: INodeProperties[] = [
     name: 'templateComponents',
     type: 'json',
     required: true,
-    default: '[\n  {\n    "type": "BODY",\n    "text": "Hello {{1}}, your order is ready."\n  }\n]',
+    default: '',
+    placeholder: '[\n  {\n    "type": "BODY",\n    "text": "Hello {{1}}, your order is ready."\n  }\n]',
     description:
       'Meta components array (HEADER, BODY, FOOTER, BUTTONS), as in the WhatsApp Cloud API "message_templates" endpoint. Variables are written {{1}}, {{2}}…',
   },

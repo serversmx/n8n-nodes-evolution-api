@@ -420,6 +420,11 @@ export function parseJsonArray(
   label: string,
   wrapperKeys: string[],
 ): IDataObject[] {
+  // Treat an unset JSON field like an empty collection so operation-specific minimum counts
+  // produce the same useful error in either input mode.
+  if (value === undefined || value === null || (typeof value === 'string' && !value.trim())) {
+    return [];
+  }
   let parsed: unknown;
   try {
     parsed = parseJsonParameter(value, label);
@@ -645,7 +650,6 @@ export function buttonValueProperties(types: string[]): INodeProperties[] {
   return properties;
 }
 
-const CTA_TYPES = ['url', 'call', 'copy'];
 const PIX_KEY_TYPES = PIX_KEY_TYPE_OPTIONS.map((option) => String(option.value));
 
 /**
@@ -711,16 +715,15 @@ export function normalizeButton(
  * Button combination rules of /message/sendButtons (whatsapp.baileys.service.ts buttonMessage):
  * - reply: at most 3, never mixed with other types;
  * - pix: exactly one button, alone;
- * - call-to-action (url, call, copy): at most 2 (enforced by Evolution API 2.4+, following
- *   WhatsApp's rules), never mixed with reply or pix.
+ * - call-to-action (url, call, copy): never mixed with reply or pix. The server enforces its
+ *   version's count limit (none in 2.3.7, at most 2 in 2.4+).
  */
 export function assertButtonRules(node: INode, itemIndex: number, buttons: IDataObject[]): void {
   const count = (types: string[]) => buttons.filter((b) => types.includes(String(b.type))).length;
   const replies = count(['reply']);
   const pix = count(['pix']);
-  const cta = count(CTA_TYPES);
   const rulesHint =
-    'Allowed combinations: 1-3 Quick Reply buttons, or 1-2 URL/Call/Copy Code buttons, or a single PIX Payment button.';
+    'Allowed combinations: 1-3 Quick Reply buttons, URL/Call/Copy Code buttons (at most 2 on Evolution API 2.4+), or a single PIX Payment button.';
 
   if (buttons.length === 0) {
     throw operationError(node, itemIndex, 'At least one button is required', rulesHint);
@@ -758,14 +761,6 @@ export function assertButtonRules(node: INode, itemIndex: number, buttons: IData
       itemIndex,
       'A PIX Payment button must be the only button of the message',
       rulesHint,
-    );
-  }
-  if (cta > 2) {
-    throw operationError(
-      node,
-      itemIndex,
-      'A message can have at most 2 call-to-action buttons (URL, Call, Copy Code)',
-      `Evolution API 2.4+ rejects more, following WhatsApp's rules. ${rulesHint}`,
     );
   }
 }

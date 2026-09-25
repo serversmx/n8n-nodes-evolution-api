@@ -32,6 +32,139 @@ describe('Resource registry', () => {
     expect(names).toEqual([...names].sort());
   });
 
+  it('pins every saved-workflow resource and operation value', () => {
+    expect(Object.fromEntries(RESOURCES.map(({ value, module }) => [value, Object.keys(module.execute).sort()])))
+      .toEqual({
+  "call": [
+    "offer"
+  ],
+  "chat": [
+    "archive",
+    "checkNumbers",
+    "deleteMessage",
+    "downloadMedia",
+    "editMessage",
+    "get",
+    "getChannels",
+    "getContacts",
+    "getMany",
+    "getMessages",
+    "getPollVotes",
+    "getStatusUpdates",
+    "markAsPlayed",
+    "markAsRead",
+    "markUnread",
+    "sendPresence",
+    "updateBlockStatus"
+  ],
+  "chatbot": [
+    "changeStatus",
+    "create",
+    "createCredential",
+    "delete",
+    "deleteCredential",
+    "get",
+    "getCredentials",
+    "getMany",
+    "getModels",
+    "getSessions",
+    "getSettings",
+    "ignoreJid",
+    "setSettings",
+    "start",
+    "update"
+  ],
+  "chatwoot": [
+    "get",
+    "set"
+  ],
+  "group": [
+    "acceptInvite",
+    "create",
+    "get",
+    "getInviteCode",
+    "getInviteInfo",
+    "getMany",
+    "getParticipants",
+    "leave",
+    "revokeInviteCode",
+    "sendInvite",
+    "toggleEphemeral",
+    "updateDescription",
+    "updateMemberAddMode",
+    "updateParticipants",
+    "updatePicture",
+    "updateSetting",
+    "updateSubject"
+  ],
+  "instance": [
+    "connect",
+    "create",
+    "delete",
+    "getConnectionState",
+    "getMany",
+    "logout",
+    "restart",
+    "setPresence"
+  ],
+  "label": [
+    "addToChat",
+    "getMany",
+    "removeFromChat"
+  ],
+  "message": [
+    "generateMessageId",
+    "sendAudio",
+    "sendButtons",
+    "sendCarousel",
+    "sendContact",
+    "sendList",
+    "sendLocation",
+    "sendMedia",
+    "sendPoll",
+    "sendPtv",
+    "sendReaction",
+    "sendStatus",
+    "sendSticker",
+    "sendTemplate",
+    "sendText"
+  ],
+  "profile": [
+    "get",
+    "getBusinessProfile",
+    "getPicture",
+    "getPrivacySettings",
+    "removePicture",
+    "updateName",
+    "updatePicture",
+    "updatePrivacySettings",
+    "updateStatus"
+  ],
+  "proxy": [
+    "get",
+    "set"
+  ],
+  "settings": [
+    "get",
+    "set"
+  ],
+  "template": [
+    "create",
+    "delete",
+    "getCatalog",
+    "getCollections",
+    "getMany",
+    "update"
+  ],
+  "webhook": [
+    "get",
+    "getTransport",
+    "set",
+    "setTransport"
+  ]
+});
+  });
+
   it('has a valid default resource', () => {
     expect(resourceProperty.default).toBe(DEFAULT_RESOURCE);
     expect(RESOURCES.map((r) => r.value)).toContain(DEFAULT_RESOURCE);
@@ -89,10 +222,17 @@ describe.each(RESOURCES.map((r) => ({ name: r.value, module: r.module })))(
       }
     });
 
-    it('describes 2.4-only fields consistently', () => {
-      const text = JSON.stringify(fields);
-      // "2.4" as a version (not inside 12.45 or 2.40): \b stops at digits on the left.
-      if (/\b2\.4(?!\d)/.test(text)) expect(text).toContain('Requires Evolution API 2.4+');
+    it('describes 2.4-only operations consistently', () => {
+      const gated: Record<string, string[]> = {
+        chat: ['getChannels', 'getPollVotes', 'markAsPlayed'],
+        group: ['updateMemberAddMode'],
+        message: ['generateMessageId', 'sendCarousel'],
+      };
+      // A limitation affecting 2.4 is not a feature that requires 2.4.
+      for (const operation of gated[name] ?? []) {
+        expect(options.find((option) => option.value === operation)?.description)
+          .toContain('Requires Evolution API 2.4+');
+      }
     });
 
     it('declares loadOptions/listSearch methods with functions', () => {

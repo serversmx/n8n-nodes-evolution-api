@@ -33,6 +33,7 @@ import {
 import {
   getDeliveryKey,
   isDuplicateDelivery,
+  rememberDelivery,
   resetDeliveryMemory,
 } from '../nodes/EvolutionApi/trigger/dedupe';
 import {
@@ -45,6 +46,7 @@ import {
   buildRestoreBody,
   isOtherEndpointOfNode,
   isVersionBelow,
+  resetRegistrationMemory,
   snapshotWebhook,
 } from '../nodes/EvolutionApi/trigger/registration';
 import type { WebhookRegistration } from '../nodes/EvolutionApi/trigger/registration';
@@ -95,10 +97,11 @@ interface MockResponse {
   body?: unknown;
   status: jest.Mock;
   json: jest.Mock;
+  setHeader: jest.Mock;
 }
 
 function createResponse(): MockResponse {
-  const res: MockResponse = { status: jest.fn(), json: jest.fn() };
+  const res: MockResponse = { status: jest.fn(), json: jest.fn(), setHeader: jest.fn() };
   res.status.mockImplementation((code: number) => {
     res.statusCode = code;
     return res;
@@ -269,6 +272,7 @@ async function runWebhook(options: TriggerContextOptions) {
 beforeEach(() => {
   setRetryPolicy({ sleep: async () => undefined });
   resetDeliveryMemory();
+  resetRegistrationMemory();
 });
 afterEach(() => resetRetryPolicy());
 
@@ -307,7 +311,7 @@ describe('EvolutionApiTrigger description', () => {
     expect(TRIGGER_DEFAULTS.mode).toBe('automatic');
     expect(TRIGGER_DEFAULTS.events).toEqual(['MESSAGES_UPSERT']);
     expect(TRIGGER_DEFAULTS.autoAuth).toBe('jwtAndHeader');
-    expect(TRIGGER_DEFAULTS.manualAuth).toBe('none');
+    expect(TRIGGER_DEFAULTS.manualAuth).toBe('jwt');
     expect(TRIGGER_DEFAULTS.options).toEqual({});
   });
 
@@ -635,6 +639,18 @@ describe('webhookMethods.checkExists', () => {
     const valid = createTriggerContext({ params: { mode: 'manual', manualAuth: 'none' } });
     await expect(methods.checkExists.call(valid.hook)).resolves.toBe(true);
     expect(valid.http.calls).toEqual([]);
+    expect(valid.logger.warn).toHaveBeenCalledTimes(1);
+    expect(valid.logger.warn).toHaveBeenCalledWith(
+      `Evolution API Trigger: Manual mode without authentication accepts any request to ${WEBHOOK_URL}`,
+    );
+
+    const secureDefault = createTriggerContext({ params: { mode: 'manual' } });
+    await expect(methods.checkExists.call(secureDefault.hook)).rejects.toThrow('Set "JWT Secret"');
+    const authenticated = createTriggerContext({
+      params: { mode: 'manual', jwtSecret: JWT_SECRET },
+    });
+    await expect(methods.checkExists.call(authenticated.hook)).resolves.toBe(true);
+    expect(authenticated.logger.warn).not.toHaveBeenCalled();
 
     const missingHeader = createTriggerContext({
       params: { mode: 'manual', manualAuth: 'header', headerValue: '' },
@@ -654,6 +670,84 @@ describe('webhookMethods.checkExists', () => {
 
 describe('webhookMethods.delete', () => {
   const previous = snapshotWebhook(PREVIOUS_ROW) as IDataObject;
+
+  it('restores a takeover during activation rollback with reloaded empty static data', async () => {
+    const activation = createTriggerContext({ params: { instanceName: rl('main') } });
+    activation.http.reply('GET', '/webhook/find/main', PREVIOUS_ROW);
+    activation.http.reply('POST', '/webhook/set/main', {}, 201);
+    await methods.create.call(activation.hook);
+    const takeover = (activation.http.calls[1].body as IDataObject).webhook as IDataObject;
+
+    const rollback = createTriggerContext({ params: { instanceName: rl('main') }, staticData: {} });
+    rollback.http.reply('GET', '/webhook/find/main', takeover);
+    rollback.http.reply('POST', '/webhook/set/main', {}, 201);
+    await expect(methods.delete.call(rollback.hook)).resolves.toBe(true);
+    expect(rollback.http.calls[1].body).toEqual(buildRestoreBody(previous));
+  });
+
+  it('does not restore process recovery state over changed secrets at the same URL', async () => {
+    const activation = createTriggerContext({ params: { instanceName: rl('main') } });
+    activation.http.reply('GET', '/webhook/find/main', PREVIOUS_ROW);
+    activation.http.reply('POST', '/webhook/set/main', {}, 201);
+    await methods.create.call(activation.hook);
+
+    const rollback = createTriggerContext({ params: { instanceName: rl('main') }, staticData: {} });
+    rollback.http.reply('GET', '/webhook/find/main', {
+      url: WEBHOOK_URL,
+      enabled: true,
+      headers: { jwt_key: 'another-owner' },
+    });
+    await expect(methods.delete.call(rollback.hook)).resolves.toBe(true);
+    expect(rollback.http.calls).toHaveLength(1);
+  });
+
+  it('disables an orphaned exact endpoint after process loss and logs the missing snapshot', async () => {
+    const activation = createTriggerContext({ params: { instanceName: rl('main') } });
+    activation.http.reply('GET', '/webhook/find/main', PREVIOUS_ROW);
+    activation.http.reply('POST', '/webhook/set/main', {}, 201);
+    await methods.create.call(activation.hook);
+    const takeover = (activation.http.calls[1].body as IDataObject).webhook as IDataObject;
+    resetRegistrationMemory();
+
+    const rollback = createTriggerContext({ params: { instanceName: rl('main') }, staticData: {} });
+    rollback.http.reply('GET', '/webhook/find/main', takeover);
+    rollback.http.reply('POST', '/webhook/set/main', {}, 201);
+    await expect(methods.delete.call(rollback.hook)).resolves.toBe(true);
+    expect((rollback.http.calls[1].body as IDataObject).webhook).toMatchObject({
+      url: WEBHOOK_URL,
+      enabled: false,
+      headers: {},
+    });
+    expect(rollback.logger.error).toHaveBeenCalledWith(
+      expect.stringContaining('could not be recovered'),
+    );
+  });
+
+  it.each([
+    [WEBHOOK_URL, { jwt_key: 'manually-configured' }],
+    [TEST_WEBHOOK_URL, { jwt_key: JWT_SECRET, [SECRET_HEADER_NAME]: HEADER_SECRET }],
+  ])('orphan cleanup leaves unowned configuration untouched: %s', async (url, headers) => {
+    const rollback = createTriggerContext({ params: { instanceName: rl('main') }, staticData: {} });
+    rollback.http.reply('GET', '/webhook/find/main', { url, enabled: true, headers });
+    await expect(methods.delete.call(rollback.hook)).resolves.toBe(true);
+    expect(rollback.http.calls).toHaveLength(1);
+  });
+
+  it('orphan test cleanup never disables a production registration', async () => {
+    const rollback = createTriggerContext({
+      params: { instanceName: rl('main') },
+      staticData: {},
+      webhookUrl: TEST_WEBHOOK_URL,
+      executionMode: 'internal',
+    });
+    rollback.http.reply('GET', '/webhook/find/main', {
+      url: WEBHOOK_URL,
+      enabled: true,
+      headers: { jwt_key: JWT_SECRET },
+    });
+    await expect(methods.delete.call(rollback.hook)).resolves.toBe(true);
+    expect(rollback.http.calls).toHaveLength(1);
+  });
 
   it('restores the saved configuration and forgets the registration', async () => {
     const staticData = registeredStaticData({ previous });
@@ -1024,6 +1118,47 @@ describe('lifecycle with the production and test URLs of the same node', () => {
     expect(isOtherEndpointOfNode(TEST_WEBHOOK_URL, WEBHOOK_URL, undefined)).toBe(false);
     expect(isOtherEndpointOfNode(undefined, WEBHOOK_URL, '2f9c')).toBe(false);
   });
+
+  it('rejects first activation during a test takeover, then restores the original through the full lifecycle', async () => {
+    const testData: IDataObject = {};
+    const listening = createTriggerContext({
+      params: { instanceName: rl('main') },
+      staticData: testData,
+      webhookUrl: TEST_WEBHOOK_URL,
+      executionMode: 'manual',
+    });
+    listening.http.reply('GET', '/webhook/find/main', PREVIOUS_ROW);
+    listening.http.reply('POST', '/webhook/set/main', {}, 201);
+    await methods.create.call(listening.hook);
+    const testRow = (listening.http.calls[1].body as IDataObject).webhook as IDataObject;
+
+    const failed = createTriggerContext({ params: { instanceName: rl('main') } });
+    failed.http.reply('GET', '/webhook/find/main', testRow);
+    await expect(methods.create.call(failed.hook)).rejects.toThrow('stop it and activate again');
+    expect(failed.http.calls).toHaveLength(1);
+    expect(failed.staticData.registrations).toBeUndefined();
+
+    const stop = createTriggerContext({
+      staticData: testData,
+      webhookUrl: TEST_WEBHOOK_URL,
+      executionMode: 'internal',
+    });
+    stop.http.reply('GET', '/webhook/find/main', testRow);
+    stop.http.reply('POST', '/webhook/set/main', {}, 201);
+    await methods.delete.call(stop.hook);
+    expect(stop.http.calls[1].body).toEqual(crmRestoreBody);
+
+    const active = createTriggerContext({ params: { instanceName: rl('main') } });
+    active.http.reply('GET', '/webhook/find/main', PREVIOUS_ROW);
+    active.http.reply('POST', '/webhook/set/main', {}, 201);
+    await methods.create.call(active.hook);
+    const productionRow = (active.http.calls[1].body as IDataObject).webhook as IDataObject;
+    const deactivate = createTriggerContext({ staticData: active.staticData });
+    deactivate.http.reply('GET', '/webhook/find/main', productionRow);
+    deactivate.http.reply('POST', '/webhook/set/main', {}, 201);
+    await methods.delete.call(deactivate.hook);
+    expect(deactivate.http.calls[1].body).toEqual(crmRestoreBody);
+  });
 });
 
 describe('registration helpers', () => {
@@ -1277,14 +1412,15 @@ describe('webhook() authentication', () => {
   it('rejects deliveries to a URL this node never registered (e.g. static data lost)', async () => {
     const { result, res, logger } = await runWebhook({ body: upsertBody(), staticData: {} });
     expect(result).toEqual({ noWebhookResponse: true });
-    expect(res.status).toHaveBeenCalledWith(401);
+    expect(res.status).toHaveBeenCalledWith(503);
+    expect(res.setHeader).toHaveBeenCalledWith('Retry-After', '5');
     expect(logger.warn).toHaveBeenCalledWith(expect.stringContaining('not registered'));
   });
 
   it('Manual mode, Authentication None: accepts unauthenticated deliveries (global webhook)', async () => {
     const { result } = await runWebhook({
       body: upsertBody(),
-      params: { mode: 'manual' },
+      params: { mode: 'manual', manualAuth: 'none' },
       staticData: {},
       headers: {},
     });
@@ -1518,7 +1654,7 @@ describe('webhook() on the test URL ("Listen for test event")', () => {
       headers: testHeaders(),
       executionMode: 'webhook',
     });
-    expect(res.status).toHaveBeenCalledWith(401);
+    expect(res.status).toHaveBeenCalledWith(503);
   });
 
   it('never accepts the production secrets on a test delivery', async () => {
@@ -1527,7 +1663,7 @@ describe('webhook() on the test URL ("Listen for test event")', () => {
       staticData: registeredStaticData(),
       executionMode: 'manual',
     });
-    expect(res.status).toHaveBeenCalledWith(401);
+    expect(res.status).toHaveBeenCalledWith(503);
     expect(logger.warn).toHaveBeenCalledWith(expect.stringContaining('not registered'));
   });
 
@@ -1766,7 +1902,11 @@ describe('webhook() filters', () => {
   });
 
   it('filters by instance name (global webhook)', async () => {
-    const params = { mode: 'manual', options: { instanceNames: 'sales, support' } };
+    const params = {
+      mode: 'manual',
+      manualAuth: 'none',
+      options: { instanceNames: 'sales, support' },
+    };
     await expectIgnored(
       { body: upsertBody({ instance: 'main' }), params, staticData: {}, headers: {} },
       'instance "main" is not selected',
@@ -1900,12 +2040,15 @@ describe('webhook() deduplication of retried deliveries', () => {
     const staticData: IDataObject = {};
     const t0 = 1_000_000;
     expect(isDuplicateDelivery(staticData, 's', 'k', t0)).toBe(false);
+    expect(staticData.recentDeliveries).toBeUndefined();
+    expect(isDuplicateDelivery(staticData, 's', 'k', t0)).toBe(false);
+    rememberDelivery(staticData, 's', 'k', t0);
     expect(isDuplicateDelivery(staticData, 's', 'k', t0 + 1000)).toBe(true);
     resetDeliveryMemory();
     expect(isDuplicateDelivery(staticData, 's', 'k', t0 + DEDUPE_TTL_MS + 1)).toBe(false);
 
     for (let i = 0; i < DEDUPE_MAX_STATIC_ENTRIES + 50; i++) {
-      isDuplicateDelivery(staticData, 's', `key-${i}`, t0 + DEDUPE_TTL_MS + 10 + i);
+      rememberDelivery(staticData, 's', `key-${i}`, t0 + DEDUPE_TTL_MS + 10 + i);
     }
     const log = staticData.recentDeliveries as IDataObject;
     expect(Object.keys(log)).toHaveLength(DEDUPE_MAX_STATIC_ENTRIES);
@@ -1974,6 +2117,33 @@ describe('webhook() media as binary', () => {
     expect(item.json.text).toBe('look');
     // The request body is not mutated.
     expect(((body.data as IDataObject).message as IDataObject).base64).toBe(imageBase64);
+  });
+
+  it('accepts a retry after binary storage failed without marking the failed delivery seen', async () => {
+    const staticData = registeredStaticData();
+    const failed = createTriggerContext({ body: imageBody(), staticData, headers: validHeaders() });
+    jest.mocked(failed.ctx.helpers.prepareBinaryData).mockRejectedValueOnce(new Error('ENOSPC'));
+    await expect(trigger.webhook.call(failed.webhook)).rejects.toThrow('ENOSPC');
+    expect(staticData.recentDeliveries).toBeUndefined();
+
+    const retry = await runWebhook({ body: imageBody(), staticData });
+    expect(retry.result.workflowData?.[0][0].binary?.data).toBeDefined();
+    const duplicate = await runWebhook({ body: imageBody(), staticData });
+    expect(duplicate.result).toEqual({
+      webhookResponse: { received: true, ignored: 'duplicate delivery' },
+    });
+  });
+
+  it('deduplicates simultaneous deliveries after asynchronous binary preparation', async () => {
+    const staticData = registeredStaticData();
+    const first = createTriggerContext({ body: imageBody(), staticData, headers: validHeaders() });
+    const second = createTriggerContext({ body: imageBody(), staticData, headers: validHeaders() });
+    const results = await Promise.all([
+      trigger.webhook.call(first.webhook),
+      trigger.webhook.call(second.webhook),
+    ]);
+    expect(results.filter((result) => result.workflowData)).toHaveLength(1);
+    expect(results.filter((result) => result.webhookResponse)).toHaveLength(1);
   });
 
   it('keeps the document file name and honours a custom binary property', async () => {

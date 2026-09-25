@@ -49,9 +49,9 @@ const properties: INodeProperties[] = [
         name: 'ttl',
         type: 'number',
         typeOptions: { minValue: 0 },
-        default: 86400,
+        default: 0,
         description:
-          'How long WhatsApp keeps trying to deliver messages that use this template (sent to Meta as time_to_live)',
+          'Unsupported on Evolution API 2.3.7 and 2.4.0-rc2: they send time_to_live instead of Meta\'s message_send_ttl_seconds. Leave 0 to omit it; use Meta Graph API directly to set the TTL. Existing nonzero values are forwarded for compatibility.',
       },
     ],
   },
@@ -82,7 +82,7 @@ export async function execute(this: IExecuteFunctions, itemIndex: number): Promi
   if (fields.allowCategoryChange !== undefined) {
     body.allowCategoryChange = fields.allowCategoryChange === true;
   }
-  if (fields.ttl !== undefined && fields.ttl !== null && fields.ttl !== '') {
+  if (fields.ttl !== undefined && fields.ttl !== null && fields.ttl !== '' && Number(fields.ttl) !== 0) {
     body.ttl = Number(fields.ttl);
   }
   if (fields.components !== undefined) {

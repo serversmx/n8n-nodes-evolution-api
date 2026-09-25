@@ -30,7 +30,7 @@ export const instanceNameProperty: INodeProperties = {
   type: 'resourceLocator',
   default: { mode: 'list', value: '' },
   description:
-    'Evolution API instance to use. Leave empty to use the "Default Instance Name" of the credential.',
+    'Evolution API instance to use. Leave empty to use the credential default, except for Delete and Logout, which require an explicit instance. Empty expressions always fail.',
   modes: [
     {
       displayName: 'From List',
