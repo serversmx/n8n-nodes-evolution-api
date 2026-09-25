@@ -1,0 +1,22 @@
+{
+  "node": "@renatoascencio/n8n-nodes-evolution-api.evolutionApi",
+  "nodeVersion": "1.0",
+  "codexVersion": "1.0",
+  "categories": ["Communication"],
+  "resources": {
+    "credentialDocumentation": [
+      {
+        "url": "https://doc.evolution-api.com/v2/en/get-started/introduction"
+      }
+    ],
+    "primaryDocumentation": [
+      {
+        "url": "https://github.com/RenatoAscencio/n8n-nodes-evolution-api#readme"
+      }
+    ]
+  },
+  "alias": ["whatsapp", "evolution", "baileys", "messaging", "chat", "wpp"],
+  "subcategories": {
+    "Communication": ["Messaging"]
+  }
+}

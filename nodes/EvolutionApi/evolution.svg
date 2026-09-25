@@ -1,0 +1,11 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="60" height="60" viewBox="0 0 60 60" fill="none">
+  <defs>
+    <linearGradient id="evolutionApiBubble" x1="4" y1="6" x2="56" y2="56" gradientUnits="userSpaceOnUse">
+      <stop offset="0" stop-color="#14B8A6"/>
+      <stop offset="1" stop-color="#4F46E5"/>
+    </linearGradient>
+  </defs>
+  <path d="M14 6h32a10 10 0 0 1 10 10v22a10 10 0 0 1-10 10h-6l4 8-14-8H14A10 10 0 0 1 4 38V16A10 10 0 0 1 14 6z" fill="url(#evolutionApiBubble)"/>
+  <path d="M22 19l-7 8 7 8M38 19l7 8-7 8" stroke="#FFFFFF" stroke-width="4" stroke-linecap="round" stroke-linejoin="round"/>
+  <path d="M33 17l-6 20" stroke="#FFFFFF" stroke-width="4" stroke-linecap="round"/>
+</svg>
