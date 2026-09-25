@@ -1,19 +1,22 @@
 import type { IDataObject, IExecuteFunctions, INodeProperties } from 'n8n-workflow';
-import { NodeOperationError, updateDisplayOptions } from 'n8n-workflow';
+import { updateDisplayOptions } from 'n8n-workflow';
 
-import { evolutionApiRequest, normalizeNumber, resolveInstanceName } from '../../GenericFunctions';
+import {
+  applySendOptions,
+  delayOption,
+  getRecipient,
+  linkPreviewOption,
+  mentionOptions,
+  messageIdOption,
+  numberProperty,
+  operationError,
+  postMessage,
+  quotedOptions,
+  sendOptionsProperty,
+} from './helpers';
 
 const properties: INodeProperties[] = [
-  {
-    displayName: 'Number',
-    name: 'number',
-    type: 'string',
-    required: true,
-    default: '',
-    placeholder: '5215512345678',
-    description:
-      'Recipient: phone number with country code, or a JID (…@s.whatsapp.net, …@g.us, …@lid)',
-  },
+  numberProperty,
   {
     displayName: 'Text',
     name: 'text',
@@ -23,30 +26,13 @@ const properties: INodeProperties[] = [
     typeOptions: { rows: 4 },
     description: 'Message text. WhatsApp formatting (*bold*, _italic_, ~strike~) is supported.',
   },
-  {
-    displayName: 'Options',
-    name: 'options',
-    type: 'collection',
-    placeholder: 'Add Option',
-    default: {},
-    options: [
-      {
-        displayName: 'Delay (Ms)',
-        name: 'delay',
-        type: 'number',
-        typeOptions: { minValue: 0 },
-        default: 0,
-        description: 'Milliseconds to show "typing…" before sending',
-      },
-      {
-        displayName: 'Link Preview',
-        name: 'linkPreview',
-        type: 'boolean',
-        default: true,
-        description: 'Whether to show a preview of the first link in the text',
-      },
-    ],
-  },
+  sendOptionsProperty([
+    delayOption(),
+    linkPreviewOption,
+    ...mentionOptions,
+    messageIdOption,
+    ...quotedOptions(),
+  ]),
 ];
 
 export const description = updateDisplayOptions(
@@ -55,33 +41,18 @@ export const description = updateDisplayOptions(
 );
 
 /**
- * POST /message/sendText/:instanceName { number, text, delay?, linkPreview? }
+ * POST /message/sendText/:instanceName
+ * { number, text, delay?, linkPreview?, quoted?, mentionsEveryOne?, mentioned?, messageId? (2.4) }
  * (textMessageSchema, HTTP 201). Returns the sent message ({ key, message, messageTimestamp, … }).
  */
 export async function execute(this: IExecuteFunctions, itemIndex: number): Promise<IDataObject> {
-  const instance = await resolveInstanceName.call(this, itemIndex);
-  const number = normalizeNumber(this.getNodeParameter('number', itemIndex));
-  const text = this.getNodeParameter('text', itemIndex, '') as string;
-  if (!number) {
-    throw new NodeOperationError(this.getNode(), 'Number is required', { itemIndex });
-  }
+  const number = getRecipient.call(this, itemIndex);
+  const text = String(this.getNodeParameter('text', itemIndex, '') ?? '');
   if (!text.trim()) {
-    throw new NodeOperationError(this.getNode(), 'Text is required', { itemIndex });
+    throw operationError(this.getNode(), itemIndex, 'Text is required');
   }
 
   const options = this.getNodeParameter('options', itemIndex, {}) as IDataObject;
-  const body: IDataObject = { number, text };
-  if (options.delay !== undefined) body.delay = Math.round(Number(options.delay));
-  if (options.linkPreview !== undefined) body.linkPreview = options.linkPreview === true;
-
-  return (await evolutionApiRequest.call(
-    this,
-    'POST',
-    `/message/sendText/${instance}`,
-    body,
-    {},
-    {
-      itemIndex,
-    },
-  )) as IDataObject;
+  const body = applySendOptions(this.getNode(), itemIndex, options, { number, text });
+  return await postMessage.call(this, itemIndex, 'sendText', body);
 }
