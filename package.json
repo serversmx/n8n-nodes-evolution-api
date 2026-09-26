@@ -16,17 +16,17 @@
     "chatwoot"
   ],
   "license": "MIT",
-  "homepage": "https://github.com/RenatoAscencio/n8n-nodes-evolution-api",
+  "homepage": "https://github.com/serversmx/n8n-nodes-evolution-api",
   "author": {
     "name": "Renato Ascencio",
     "email": "renato_ascencio@hotmail.com"
   },
   "repository": {
     "type": "git",
-    "url": "git+https://github.com/RenatoAscencio/n8n-nodes-evolution-api.git"
+    "url": "git+https://github.com/serversmx/n8n-nodes-evolution-api.git"
   },
   "bugs": {
-    "url": "https://github.com/RenatoAscencio/n8n-nodes-evolution-api/issues"
+    "url": "https://github.com/serversmx/n8n-nodes-evolution-api/issues"
   },
   "engines": {
     "node": ">=18.0.0"
