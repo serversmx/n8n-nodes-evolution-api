@@ -1,0 +1,166 @@
+{
+  "name": "Evolution API + Chatwoot · Tag new WhatsApp leads",
+  "nodes": [
+    {
+      "parameters": {
+        "instanceName": {
+          "__rl": true,
+          "mode": "name",
+          "value": "ventas"
+        },
+        "events": [
+          "MESSAGES_UPSERT"
+        ],
+        "options": {
+          "ignoreFromMe": true,
+          "ignoreGroups": true
+        }
+      },
+      "id": "3c0b4583-19b8-5280-bced-101b0f31726e",
+      "name": "Evolution API Trigger",
+      "type": "@renatoascencio/n8n-nodes-evolution-api.evolutionApiTrigger",
+      "typeVersion": 1,
+      "position": [
+        0,
+        0
+      ],
+      "credentials": {
+        "evolutionWhatsAppApi": {
+          "id": "EVOLUTION_CREDENTIAL_ID",
+          "name": "Evolution API"
+        }
+      },
+      "webhookId": "029f8873-0a91-5f2d-a41c-e38b34cffb0d"
+    },
+    {
+      "parameters": {
+        "resource": "contact",
+        "operation": "findByWhatsApp",
+        "whatsappNumber": "={{ $json.phoneNumber }}"
+      },
+      "id": "871c2f69-91c8-576b-b746-80788e1203b7",
+      "name": "Find Chatwoot contact",
+      "type": "@renatoascencio/n8n-nodes-chatwoot.chatwoot",
+      "typeVersion": 1,
+      "position": [
+        260,
+        0
+      ],
+      "credentials": {
+        "chatwootApi": {
+          "id": "CHATWOOT_CREDENTIAL_ID",
+          "name": "Chatwoot account"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "resource": "contact",
+        "operation": "appendLabels",
+        "contactId": "={{ $json.id }}",
+        "labels": "={{ [\"whatsapp-lead\"] }}"
+      },
+      "id": "268046a4-14a9-52cb-bcf6-4dc2ca9a9153",
+      "name": "Tag as WhatsApp lead",
+      "type": "@renatoascencio/n8n-nodes-chatwoot.chatwoot",
+      "typeVersion": 1,
+      "position": [
+        520,
+        0
+      ],
+      "credentials": {
+        "chatwootApi": {
+          "id": "CHATWOOT_CREDENTIAL_ID",
+          "name": "Chatwoot account"
+        }
+      }
+    }
+  ],
+  "connections": {
+    "Evolution API Trigger": {
+      "main": [
+        [
+          {
+            "node": "Find Chatwoot contact",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Find Chatwoot contact": {
+      "main": [
+        [
+          {
+            "node": "Tag as WhatsApp lead",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    }
+  },
+  "pinData": {
+    "Evolution API Trigger": [
+      {
+        "json": {
+          "event": "messages.upsert",
+          "instance": "ventas",
+          "data": {
+            "key": {
+              "remoteJid": "5215512345678@s.whatsapp.net",
+              "fromMe": false,
+              "id": "3EB0A1B2C3D4E5F6"
+            },
+            "pushName": "María López",
+            "message": {
+              "conversation": "Hola, ¿cuál es su horario de atención?"
+            },
+            "messageType": "conversation",
+            "messageTimestamp": 1790435052
+          },
+          "destination": "https://n8n.example.com/webhook/evolution",
+          "date_time": "2026-09-26T09:04:12.000-06:00",
+          "sender": "5215599990000@s.whatsapp.net",
+          "server_url": "https://evolution.example.com",
+          "messageId": "3EB0A1B2C3D4E5F6",
+          "remoteJid": "5215512345678@s.whatsapp.net",
+          "remoteJidAlt": null,
+          "phoneJid": "5215512345678@s.whatsapp.net",
+          "phoneNumber": "5215512345678",
+          "lid": null,
+          "isGroup": false,
+          "participant": null,
+          "fromMe": false,
+          "pushName": "María López",
+          "messageType": "conversation",
+          "text": "Hola, ¿cuál es su horario de atención?",
+          "quotedMessageId": null
+        }
+      }
+    ],
+    "Find Chatwoot contact": [
+      {
+        "json": {
+          "id": 1187,
+          "name": "María López",
+          "phone_number": "+5215512345678",
+          "identifier": "5215512345678@s.whatsapp.net",
+          "matchedBy": "phone_number"
+        }
+      }
+    ],
+    "Tag as WhatsApp lead": [
+      {
+        "json": {
+          "payload": [
+            "whatsapp-lead"
+          ]
+        }
+      }
+    ]
+  },
+  "settings": {
+    "executionOrder": "v1"
+  }
+}

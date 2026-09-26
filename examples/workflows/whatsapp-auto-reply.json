@@ -1,0 +1,186 @@
+{
+  "name": "Evolution API · WhatsApp auto-reply",
+  "nodes": [
+    {
+      "parameters": {
+        "instanceName": {
+          "__rl": true,
+          "mode": "name",
+          "value": "ventas"
+        },
+        "events": [
+          "MESSAGES_UPSERT"
+        ],
+        "options": {
+          "ignoreFromMe": true,
+          "ignoreGroups": true,
+          "deduplicate": true
+        }
+      },
+      "id": "3c0b4583-19b8-5280-bced-101b0f31726e",
+      "name": "Evolution API Trigger",
+      "type": "@renatoascencio/n8n-nodes-evolution-api.evolutionApiTrigger",
+      "typeVersion": 1,
+      "position": [
+        0,
+        0
+      ],
+      "credentials": {
+        "evolutionWhatsAppApi": {
+          "id": "EVOLUTION_CREDENTIAL_ID",
+          "name": "Evolution API"
+        }
+      },
+      "webhookId": "029f8873-0a91-5f2d-a41c-e38b34cffb0d"
+    },
+    {
+      "parameters": {
+        "conditions": {
+          "options": {
+            "caseSensitive": false,
+            "leftValue": "",
+            "typeValidation": "loose",
+            "version": 2
+          },
+          "conditions": [
+            {
+              "id": "b2bc0bc0-37a6-5919-b6c0-4039c0d144d5",
+              "leftValue": "={{ $json.text }}",
+              "rightValue": "horario",
+              "operator": {
+                "type": "string",
+                "operation": "contains"
+              }
+            }
+          ],
+          "combinator": "and"
+        },
+        "options": {
+          "ignoreCase": true
+        }
+      },
+      "id": "625112ba-f082-50ca-bfa4-b29c103be085",
+      "name": "Asks for opening hours?",
+      "type": "n8n-nodes-base.if",
+      "typeVersion": 2.2,
+      "position": [
+        260,
+        0
+      ]
+    },
+    {
+      "parameters": {
+        "instanceName": {
+          "__rl": true,
+          "mode": "name",
+          "value": "={{ $json.instance }}"
+        },
+        "number": "={{ $json.remoteJid }}",
+        "text": "Nuestro horario es de lunes a viernes, 9:00 a 18:00 h. 🕘",
+        "options": {
+          "delay": 1200,
+          "quotedMessageId": "={{ $json.messageId }}"
+        }
+      },
+      "id": "fc04ec2f-7842-5042-aa22-fd4c39078001",
+      "name": "Reply with opening hours",
+      "type": "@renatoascencio/n8n-nodes-evolution-api.evolutionApi",
+      "typeVersion": 1,
+      "position": [
+        540,
+        -100
+      ],
+      "credentials": {
+        "evolutionWhatsAppApi": {
+          "id": "EVOLUTION_CREDENTIAL_ID",
+          "name": "Evolution API"
+        }
+      }
+    }
+  ],
+  "connections": {
+    "Evolution API Trigger": {
+      "main": [
+        [
+          {
+            "node": "Asks for opening hours?",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Asks for opening hours?": {
+      "main": [
+        [
+          {
+            "node": "Reply with opening hours",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    }
+  },
+  "pinData": {
+    "Evolution API Trigger": [
+      {
+        "json": {
+          "event": "messages.upsert",
+          "instance": "ventas",
+          "data": {
+            "key": {
+              "remoteJid": "5215512345678@s.whatsapp.net",
+              "fromMe": false,
+              "id": "3EB0A1B2C3D4E5F6"
+            },
+            "pushName": "María López",
+            "message": {
+              "conversation": "Hola, ¿cuál es su horario de atención?"
+            },
+            "messageType": "conversation",
+            "messageTimestamp": 1790435052
+          },
+          "destination": "https://n8n.example.com/webhook/evolution",
+          "date_time": "2026-09-26T09:04:12.000-06:00",
+          "sender": "5215599990000@s.whatsapp.net",
+          "server_url": "https://evolution.example.com",
+          "messageId": "3EB0A1B2C3D4E5F6",
+          "remoteJid": "5215512345678@s.whatsapp.net",
+          "remoteJidAlt": null,
+          "phoneJid": "5215512345678@s.whatsapp.net",
+          "phoneNumber": "5215512345678",
+          "lid": null,
+          "isGroup": false,
+          "participant": null,
+          "fromMe": false,
+          "pushName": "María López",
+          "messageType": "conversation",
+          "text": "Hola, ¿cuál es su horario de atención?",
+          "quotedMessageId": null
+        }
+      }
+    ],
+    "Reply with opening hours": [
+      {
+        "json": {
+          "key": {
+            "remoteJid": "5215512345678@s.whatsapp.net",
+            "fromMe": true,
+            "id": "3EB0F9E8D7C6B5A4"
+          },
+          "message": {
+            "extendedTextMessage": {
+              "text": "Nuestro horario es de lunes a viernes, 9:00 a 18:00 h. 🕘"
+            }
+          },
+          "messageTimestamp": "1790435054",
+          "status": "PENDING"
+        }
+      }
+    ]
+  },
+  "settings": {
+    "executionOrder": "v1"
+  }
+}

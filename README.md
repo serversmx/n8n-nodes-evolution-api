@@ -13,6 +13,7 @@ trigger. 13 resources, 101 operations, zero runtime dependencies, usable as an A
 > servidor). Instalación, credenciales y todas las secciones de abajo están en inglés; usa el
 > traductor de tu navegador si lo necesitas.
 
+- [Screenshots and examples](#screenshots-and-examples)
 - [Installation](#installation)
 - [Credentials: "Evolution API v2"](#credentials-evolution-api-v2)
 - [Resources and operations](#resources-and-operations)
@@ -24,6 +25,25 @@ trigger. 13 resources, 101 operations, zero runtime dependencies, usable as an A
 - [Compatibility](#compatibility)
 - [Development](#development)
 - [Release process](#release-process)
+
+## Screenshots and examples
+
+Taken in n8n 2.40.7 with the example workflows in [`examples/workflows`](examples/workflows) (sample data is fictional and pinned, so you can open them without an Evolution API server). Import a file with **Workflows → Import from File**, then select your own credentials.
+
+| File | What it does |
+|---|---|
+| [`whatsapp-auto-reply.json`](examples/workflows/whatsapp-auto-reply.json) | Evolution API Trigger (automatic mode, own messages and groups ignored) → IF the customer asks for opening hours → reply quoting their message |
+| [`tag-whatsapp-leads-in-chatwoot.json`](examples/workflows/tag-whatsapp-leads-in-chatwoot.json) | New WhatsApp message → find the Chatwoot contact by WhatsApp number (needs [`@renatoascencio/n8n-nodes-chatwoot`](https://www.npmjs.com/package/@renatoascencio/n8n-nodes-chatwoot)) → add the `whatsapp-lead` label |
+
+![WhatsApp auto-reply workflow](assets/screenshots/workflow-whatsapp-auto-reply.png)
+
+| Trigger in automatic mode (JWT + secret header) | Message › Send Text |
+|---|---|
+| ![Evolution API Trigger parameters](assets/screenshots/trigger-automatic-mode.png) | ![Send text](assets/screenshots/message-send-text.png) |
+
+**Evolution API + Chatwoot:**
+
+![Evolution API and Chatwoot workflow](assets/screenshots/workflow-evolution-chatwoot.png)
 
 ## Installation
 

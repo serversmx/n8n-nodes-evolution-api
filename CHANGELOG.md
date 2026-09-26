@@ -11,6 +11,7 @@ code (not just its docs).
 
 ### Added
 
+- **Example workflows and screenshots**: importable workflows in `examples/workflows` (with pinned sample data) and README screenshots taken in n8n 2.40.7.
 - **Credential "Evolution API v2"** (`evolutionWhatsAppApi`): Base URL, API Key (accepts either
   the global `AUTHENTICATION_API_KEY` or one instance token) and an optional Default Instance
   Name, sent as the `apikey` header. The credential test adapts to the key type and explains
