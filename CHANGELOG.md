@@ -17,7 +17,10 @@ code (not just its docs).
   Name, sent as the `apikey` header. The credential test adapts to the key type and explains
   `503 LICENSE_REQUIRED`, `401` and `404` responses. The internal credential name is
   `evolutionWhatsAppApi`, distinct from `evolutionApi` / `evolutionApiApi` / `evolutionApiV2Api`
-  used by other community packages, so this node can be installed alongside them.
+  used by other community packages, so their saved credentials are not affected. The node
+  itself is also named "Evolution API", like `n8n-nodes-evolution-api` and
+  `n8n-nodes-evolution-api-v2`: n8n keys installed nodes by display name, so uninstall those
+  packages before installing this one (see README → Installation).
 - **Evolution API node** (13 resources, 101 operations total): Call (1), Chat (17), Chatbot (15),
   Chatwoot (2), Group (17), Instance (8), Label (3), Message (15), Profile (9), Proxy (2),
   Settings (2), Template (6), Webhook (4). Every input item is processed independently with
