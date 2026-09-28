@@ -59,11 +59,19 @@ n8n installation's custom-nodes directory.
 by n8n, set `N8N_UNVERIFIED_PACKAGES_ENABLED=true` on self-hosted n8n 3.0+ instances to keep
 installing and using it.
 
+> **Already using another Evolution API community node?** Uninstall
+> [`n8n-nodes-evolution-api`](https://www.npmjs.com/package/n8n-nodes-evolution-api) or
+> [`n8n-nodes-evolution-api-v2`](https://www.npmjs.com/package/n8n-nodes-evolution-api-v2) first.
+> Both also name their node "Evolution API", and n8n's community-package registry keys installed
+> nodes by display name, so only one package with that node name can be installed at a time.
+> After uninstalling, make sure the package folder is gone from `~/.n8n/nodes/node_modules` (n8n
+> loads anything left there) and restart n8n. Workflows that used the other node must be rebuilt
+> with this one because the parameters differ.
+
 The credential type is internally named `evolutionWhatsAppApi`, not `evolutionApi`,
 `evolutionApiApi` or `evolutionApiV2Api` (already used by other community packages for Evolution
-API). Because n8n credential type names are global per instance, this lets you install this
-package **alongside** another Evolution API community node without either one breaking the
-other's saved credentials.
+API). Credential type names are global per n8n instance, so credentials you saved for another
+Evolution package are left untouched and can be deleted separately.
 
 ## Credentials: "Evolution API v2"
 
